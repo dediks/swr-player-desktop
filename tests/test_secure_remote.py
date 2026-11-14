@@ -365,3 +365,115 @@ def test_tracks_catalog_groups_and_select_group_command():
     ], 'master-group-instance')
     assert remote.command_status(pair['token'], accepted['command_id'])['status'] == 'applied'
     assert remote.tracks(pair['token'])['active_group_id'] == 'g_opening'
+
+
+def test_media_transfer_disabled_by_default_and_streams_verified_audio(tmp_path):
+    import hashlib
+    import http.client
+    import json
+    import ssl
+    import urllib.parse
+    import fs_browser
+    from web_ui import RemotePlayerHub
+    from secure_remote import SecureRemote
+
+    inbox = tmp_path / 'inbox'
+    inbox.mkdir()
+    song_bytes = (b'ID3\x04\x00test-audio-payload-' * 128)
+    song_sha = hashlib.sha256(song_bytes).hexdigest()
+    (inbox / 'Lagu Uji [abc].mp3').write_bytes(song_bytes)
+    (tmp_path / 'outside.mp3').write_bytes(b'secret-outside')
+
+    remote = SecureRemote(
+        RemotePlayerHub(),
+        media_resolver=fs_browser.resolve_safe_audio_file,
+        default_inbox=inbox,
+    )
+    remote.start('127.0.0.1', 0)
+    try:
+        invite1 = remote.open_invite()
+        ctrl = remote.pair(invite1, 'ControlPhone')
+        remote.approve(ctrl['device_id'], 'control')
+        invite2 = remote.open_invite()
+        viewer = remote.pair(invite2, 'ViewOnlyPhone')
+        remote.approve(viewer['device_id'], 'view_only')
+
+        remote.master_poll(
+            {'is_playing': False},
+            [],
+            'master-media-instance',
+            catalog={
+                'source_dir': str(inbox),
+                'playlist': 'Semua Lagu',
+                'total_tracks': 2,
+                'items': [
+                    {'id': 'trk_ok', 'title': 'Lagu Uji', 'rel_path': 'Lagu Uji [abc].mp3'},
+                    {'id': 'trk_evil', 'title': 'Outside', 'rel_path': '../outside.mp3'},
+                ],
+            },
+        )
+
+        # Catalog JSON never leaks source_dir or rel_path
+        tracks_payload = remote.tracks(ctrl['token'])
+        assert tracks_payload['tracks'] == [
+            {'id': 'trk_ok', 'title': 'Lagu Uji'},
+            {'id': 'trk_evil', 'title': 'Outside'},
+        ]
+
+        host = remote.bind_info['ip']
+        port = remote.listener.server_address[1]
+        ctx = ssl.create_default_context(cadata=remote.certificate)
+
+        def https_req(method, path, token, headers=None):
+            conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=5)
+            req_headers = {'Authorization': f'Bearer {token}', **(headers or {})}
+            conn.request(method, path, headers=req_headers)
+            resp = conn.getresponse()
+            body = resp.read()
+            hdrs = {k.lower(): v for k, v in resp.getheaders()}
+            conn.close()
+            return resp.status, hdrs, body
+
+        # Default disabled: capabilities.media=False and endpoint 403
+        st, _, body = https_req('GET', '/v1/capabilities', ctrl['token'], {'X-Swararia-Capabilities': 'extended-v1'})
+        assert st == 200 and json.loads(body)['media'] is False
+        st, _, body = https_req('GET', '/v1/tracks/trk_ok/media', ctrl['token'])
+        assert st == 403 and json.loads(body)['code'] == 'media_disabled'
+
+        # Enable media transfer: view_only still denied, control allowed
+        remote.set_media_transfer(True)
+        assert remote.admin_status()['media_transfer_enabled'] is True
+
+        st, _, body = https_req('GET', '/v1/capabilities', viewer['token'], {'X-Swararia-Capabilities': 'extended-v1'})
+        assert st == 200 and json.loads(body)['media'] is False
+        st, _, body = https_req('GET', '/v1/tracks/trk_ok/media', viewer['token'])
+        assert st == 403 and json.loads(body)['code'] == 'view_only'
+
+        st, _, body = https_req('GET', '/v1/capabilities', ctrl['token'], {'X-Swararia-Capabilities': 'extended-v1'})
+        caps = json.loads(body)
+        assert st == 200 and caps['media'] is True and caps['media_max_bytes'] == remote.MAX_MEDIA_BYTES
+
+        # HEAD returns metadata & hash with empty body
+        st, hdrs, body = https_req('HEAD', '/v1/tracks/trk_ok/media', ctrl['token'])
+        assert st == 200 and body == b''
+        assert hdrs['x-swararia-sha256'] == song_sha
+        assert int(hdrs['content-length']) == len(song_bytes)
+        assert hdrs['x-content-type-options'] == 'nosniff'
+        assert hdrs['cache-control'] == 'no-store'
+        assert urllib.parse.unquote(hdrs['x-swararia-filename']) == 'Lagu Uji [abc].mp3'
+        assert hdrs['content-disposition'].startswith('attachment;')
+
+        # GET streams exact file bytes matching SHA-256
+        st, hdrs, body = https_req('GET', '/v1/tracks/trk_ok/media', ctrl['token'])
+        assert st == 200 and body == song_bytes and hashlib.sha256(body).hexdigest() == song_sha
+
+        # Path traversal fails closed inside fs_browser.resolve_safe_audio_file
+        st, _, body = https_req('GET', '/v1/tracks/trk_evil/media', ctrl['token'])
+        assert st == 403 and json.loads(body)['code'] == 'media_forbidden'
+
+        # HEAD on JSON endpoint remains 405
+        st, _, _ = https_req('HEAD', '/v1/state', ctrl['token'])
+        assert st == 405
+    finally:
+        remote.stop()
+        assert remote.admin_status()['media_transfer_enabled'] is False

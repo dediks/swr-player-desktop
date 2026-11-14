@@ -267,6 +267,33 @@ test('wsl2 defaults, bridge status banner and manual port reservation work clean
   assert.ok(bridgeCalls.some(c => c.action === 'enable'));
   assert.ok(el('nativeBridgeBanner').classList.contains('ready'));
 });
+test('media transfer toggle defaults off, syncs when enabled, and rolls back on failure', async () => {
+  const h = harness();
+  await h.admin.refresh();
+  assert.ok(!visible(h.el('nativeMediaBox')));
+  assert.equal(h.el('nativeMediaTransfer').disabled, true);
+  h.state = { enabled: true, media_transfer_enabled: false, url: 'https://127.0.0.1:8766', devices: [] };
+  h.responder = async p => {
+    if (p?.action === 'set_media_transfer') {
+      h.state.media_transfer_enabled = p.enabled;
+    }
+    return structuredClone(h.state);
+  };
+  await h.admin.refresh();
+  assert.ok(visible(h.el('nativeMediaBox')));
+  assert.equal(h.el('nativeMediaTransfer').disabled, false);
+  assert.equal(h.el('nativeMediaTransfer').checked, false);
+  h.el('nativeMediaTransfer').checked = true;
+  await h.el('nativeMediaTransfer').listeners.change();
+  assert.equal(h.sent.at(-1).action, 'set_media_transfer');
+  assert.equal(h.sent.at(-1).enabled, true);
+  assert.equal(h.el('nativeMediaTransfer').checked, true);
+
+  h.responder = async () => { throw new Error('local_origin_required'); };
+  h.el('nativeMediaTransfer').checked = false;
+  await h.el('nativeMediaTransfer').listeners.change();
+  assert.equal(h.el('nativeMediaTransfer').checked, true);
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { await fn(); console.log('PASS',name); } catch(e) { failed++; console.error('FAIL',name,e); } }
 console.log(`Summary: ${tests.length-failed}/${tests.length} passed.`);

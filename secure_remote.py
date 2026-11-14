@@ -1,4 +1,4 @@
-"""Session-only native remote v1. No media, filesystem or discovery API.
+"""Session-only native remote v1 + opt-in local catalog media transfer.
 
 Owned by the local HTTP server. Secrets exist only in RAM; TLS key material is
 created in a private temporary directory and removed immediately after loading.
@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
+import stat
 import threading
 import time
 
@@ -44,17 +46,25 @@ class SecureRemote:
     TRACK_ID_RE = re.compile(r'^[A-Za-z0-9_-]{3,32}$')
     GROUP_ID_RE = re.compile(r'^[A-Za-z0-9_-]{2,32}$')
     ALLOWED_ACTIONS = ('play', 'pause', 'stop', 'fade_out', 'prev', 'next', 'select_track', 'select_group')
+    MAX_MEDIA_BYTES = 150 * 1024 * 1024
+    MAX_SHA_CACHE = 512
+    DOWNLOADABLE_EXTENSIONS = frozenset({'.mp3', '.m4a', '.mp4', '.aac', '.opus', '.ogg', '.webm', '.flac', '.wav'})
 
-    def __init__(self, hub, clock=time.time):
+    def __init__(self, hub, clock=time.time, media_resolver=None, default_inbox=None):
         self.hub, self.clock = hub, clock
+        self.media_resolver = media_resolver
+        self.default_inbox = default_inbox
         self.lock = threading.RLock()
         self.enabled = False
+        self.media_transfer_enabled = False
         self.session_id = None
         self.invite = None
         self.devices = {}
         self.records = {}
         self.catalog_tracks = []
         self.track_ids = set()
+        self.catalog_media = {}
+        self._sha_cache = {}
         self.catalog_groups = []
         self.group_ids = set()
         self.active_group_id = None
@@ -126,6 +136,7 @@ class SecureRemote:
     def deactivate(self):
         with self.lock:
             self.enabled = False
+            self.media_transfer_enabled = False
             self.invite = None
             self.devices.clear()
             self.records.clear()
@@ -136,6 +147,8 @@ class SecureRemote:
     def _clear_catalog(self):
         self.catalog_tracks = []
         self.track_ids = set()
+        self.catalog_media = {}
+        self._sha_cache.clear()
         self.catalog_groups = []
         self.group_ids = set()
         self.active_group_id = None
@@ -179,6 +192,9 @@ class SecureRemote:
                 sanitized_groups.append({'id': gid, 'name': name, 'count': min(count, 100000)})
         sanitized = []
         seen_ids = set()
+        media_refs = {}
+        raw_source_dir = catalog.get('source_dir')
+        source_dir = raw_source_dir.strip() if isinstance(raw_source_dir, str) and raw_source_dir.strip() else None
         for item in raw_items[:self.MAX_TRACKS]:
             if not isinstance(item, dict):
                 continue
@@ -194,6 +210,9 @@ class SecureRemote:
             if isinstance(item_gid, str) and item_gid in seen_group_ids:
                 entry['group_id'] = item_gid
             sanitized.append(entry)
+            rel_path = item.get('rel_path')
+            if isinstance(rel_path, str) and rel_path.strip():
+                media_refs[tid] = (source_dir, rel_path.strip())
         self.catalog_groups = sanitized_groups
         self.group_ids = seen_group_ids
         raw_active_group = catalog.get('active_group_id')
@@ -202,6 +221,7 @@ class SecureRemote:
         self.total_tracks = min(raw_total, 100000) if (type(raw_total) is int and raw_total >= len(sanitized)) else len(sanitized)
         self.catalog_tracks = sanitized
         self.track_ids = seen_ids
+        self.catalog_media = media_refs
         self.playlist_label = self._sanitize_title(catalog.get('playlist'), max_len=60)
         if self.current_track_id not in self.track_ids:
             self.current_track_id = None
@@ -507,6 +527,126 @@ class SecureRemote:
                 deliver.append(cmd)
             return deliver
 
+    def set_media_transfer(self, enabled):
+        if type(enabled) is not bool:
+            raise RemoteError('invalid_media_flag', 400)
+        with self.lock:
+            self.media_transfer_enabled = enabled
+            if not enabled:
+                self._sha_cache.clear()
+
+    def capabilities_for(self, token, extended=False):
+        with self.lock:
+            device = self._device(token, active=True)
+            actions = list(self.ALLOWED_ACTIONS) if extended else ['play', 'pause', 'stop']
+            can_download = bool(
+                extended
+                and self.media_transfer_enabled
+                and self.media_resolver is not None
+                and device['role'] == 'control'
+            )
+            return {
+                'protocol': 'v1',
+                'commands': actions,
+                'media': can_download,
+                'media_max_bytes': self.MAX_MEDIA_BYTES,
+                'command_ttl_seconds': self.COMMAND_TTL,
+                'idempotency_ttl_seconds': self.RECORD_TTL,
+            }
+
+    def authorize_media(self, token, track_id):
+        if not isinstance(track_id, str) or not self.TRACK_ID_RE.fullmatch(track_id):
+            raise RemoteError('unknown_route', 404)
+        with self.lock:
+            self._device(token, active=True, control=True)
+            if not self.media_transfer_enabled or self.media_resolver is None:
+                raise RemoteError('media_disabled', 403)
+            if self.master_instance is None or self.clock() - self.master_seen >= 2.0:
+                raise RemoteError('master_unavailable', 409)
+            if track_id not in self.track_ids:
+                raise RemoteError('unknown_track', 404)
+            media_ref = self.catalog_media.get(track_id)
+            if not media_ref:
+                raise RemoteError('media_unavailable', 404)
+            return media_ref[0], media_ref[1], self.session_id
+
+    @staticmethod
+    def _sanitize_download_filename(name):
+        cleaned = ''.join(ch if ch.isprintable() and ch not in '/\\:"<>|?*' else '_' for ch in str(name)).strip()
+        return cleaned or 'track.audio'
+
+    def open_media_file(self, media_ref, need_stream=True):
+        source_dir, rel_path, expected_session_id = media_ref
+        if self.media_resolver is None:
+            raise RemoteError('media_disabled', 403)
+        try:
+            target_path, mime_type = self.media_resolver(source_dir, rel_path, self.default_inbox)
+        except FileNotFoundError:
+            raise RemoteError('media_unavailable', 404) from None
+        except (ValueError, OSError):
+            raise RemoteError('media_forbidden', 403) from None
+
+        ext = target_path.suffix.lower()
+        if ext not in self.DOWNLOADABLE_EXTENSIONS:
+            raise RemoteError('unsupported_media_format', 415)
+
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+        try:
+            fd = os.open(target_path, flags)
+        except FileNotFoundError:
+            raise RemoteError('media_unavailable', 404) from None
+        except OSError:
+            raise RemoteError('media_forbidden', 403) from None
+
+        stream = None
+        try:
+            stream = os.fdopen(fd, 'rb')
+        except OSError:
+            os.close(fd)
+            raise RemoteError('media_unavailable', 404) from None
+
+        try:
+            st = os.fstat(stream.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_size <= 0:
+                raise RemoteError('media_unavailable', 404)
+            if st.st_size > self.MAX_MEDIA_BYTES:
+                raise RemoteError('media_too_large', 413)
+
+            cache_key = str(target_path)
+            sha256_hex = None
+            with self.lock:
+                if not self.enabled or self.session_id != expected_session_id or not self.media_transfer_enabled:
+                    raise RemoteError('media_disabled', 403)
+                cached = self._sha_cache.get(cache_key)
+                if cached and cached[0] == st.st_size and cached[1] == st.st_mtime_ns:
+                    sha256_hex = cached[2]
+
+            if sha256_hex is None:
+                hasher = hashlib.sha256()
+                while True:
+                    chunk = stream.read(65536)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                sha256_hex = hasher.hexdigest()
+                with self.lock:
+                    if self.enabled and self.session_id == expected_session_id and self.media_transfer_enabled:
+                        if len(self._sha_cache) >= self.MAX_SHA_CACHE:
+                            self._sha_cache.clear()
+                        self._sha_cache[cache_key] = (st.st_size, st.st_mtime_ns, sha256_hex)
+                if need_stream:
+                    stream.seek(0)
+
+            safe_name = self._sanitize_download_filename(target_path.name)
+            if not need_stream:
+                stream.close()
+                stream = None
+            return stream, mime_type, st.st_size, sha256_hex, safe_name
+        except Exception:
+            if stream is not None:
+                stream.close()
+            raise
+
     def admin_status(self):
         with self.lock:
             if self.invite and self.clock() >= self.invite[1]:
@@ -516,6 +656,7 @@ class SecureRemote:
                     d['status'] = 'expired'
                     self._cancel_device_commands(d['device_id'])
             status = {'enabled': self.enabled, 'protocol': 'v1', **self.connection_info,
+                      'media_transfer_enabled': bool(self.media_transfer_enabled),
                       'invite': self.invite[0] if self.invite else None,
                       'invite_expires_at': self.invite[1] if self.invite else None,
                       'devices': [{k: d[k] for k in ('device_id', 'label', 'status', 'role', 'expires_at')}

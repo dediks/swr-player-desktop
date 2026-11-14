@@ -1613,7 +1613,11 @@ class LocalAudioServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address, handler):
-        self.secure_remote = SecureRemote(remote_hub)
+        self.secure_remote = SecureRemote(
+            remote_hub,
+            media_resolver=fs_browser.resolve_safe_audio_file,
+            default_inbox=INBOX_DIR,
+        )
         self._wsl_foh_bridge_server = None
         self._wsl_foh_bridge_thread = None
         self.wsl_foh_internal_port: int | None = None
@@ -1785,7 +1789,8 @@ class AudioServerHandler(BaseHTTPRequestHandler):
             fields = {'start': {'action', 'bind_ip', 'port'}, 'stop': {'action'},
                       'invite_open': {'action'}, 'invite_close': {'action'},
                       'approve': {'action', 'device_id', 'role'},
-                      'revoke': {'action', 'device_id'}, 'deny': {'action', 'device_id'}}
+                      'revoke': {'action', 'device_id'}, 'deny': {'action', 'device_id'},
+                      'set_media_transfer': {'action', 'enabled'}}
             if not isinstance(op, str) or op not in fields or set(payload) - fields[op]:
                 raise RemoteError('invalid_admin_action', 400)
             if op == 'start':
@@ -1819,6 +1824,8 @@ class AudioServerHandler(BaseHTTPRequestHandler):
                 remote.approve(payload.get('device_id'), payload.get('role'))
             elif op in ('deny', 'revoke'):
                 remote.revoke(payload.get('device_id'), deny=op == 'deny')
+            elif op == 'set_media_transfer':
+                remote.set_media_transfer(payload.get('enabled'))
             self.send_json(200, self._build_native_admin_status(force_refresh=False))
         except RemoteError as exc:
             self.send_json(exc.status, {'code': exc.code})
@@ -2095,7 +2102,7 @@ class AudioServerHandler(BaseHTTPRequestHandler):
             self.send_json(400, {'code': 'invalid_length'})
             return
         content_length = int(lengths[0])
-        if content_length > (65536 if path == '/api/remote/state' else 4096 if path.startswith('/api/native-remote') else 1024 * 1024):
+        if content_length > (262144 if path == '/api/remote/state' else 4096 if path.startswith('/api/native-remote') else 1024 * 1024):
             self.send_json(413, {'code': 'body_too_large'})
             return
         body = self.rfile.read(content_length)

@@ -117,6 +117,11 @@ export function initNativeRemoteAdmin({
     current = info;
     const show = (id, yes) => el(id).classList.toggle('hidden', !yes);
     show('nativeOff', !info.enabled);
+    show('nativeMediaBox', Boolean(info.enabled));
+    if (el('nativeMediaTransfer')) {
+      el('nativeMediaTransfer').checked = Boolean(info.media_transfer_enabled);
+      el('nativeMediaTransfer').disabled = busy || !info.enabled;
+    }
     show('nativeDeviceSection', Boolean(info.enabled && info.devices?.length));
     show('nativeInviteOpen', Boolean(info.enabled));
     show('nativeInviteActions', Boolean(info.enabled));
@@ -258,8 +263,8 @@ export function initNativeRemoteAdmin({
       ['nativeInviteOpen', !current?.enabled], ['nativeInviteClose', !validInvite(current)],
       ['nativeCopy', !validInvite(current) || !el('nativePairing').value], ['nativeRefresh', false],
     ]) el(id).disabled = busy || Boolean(disabled);
-    for (const id of ['nativeBridgeEnable', 'nativeBridgeDisable', 'nativeBridgeCheck', 'nativeBridgeBannerEnable']) {
-      if (el(id)) el(id).disabled = busy;
+    for (const id of ['nativeBridgeEnable', 'nativeBridgeDisable', 'nativeBridgeCheck', 'nativeBridgeBannerEnable', 'nativeMediaTransfer']) {
+      if (el(id)) el(id).disabled = busy || (id === 'nativeMediaTransfer' && !current?.enabled);
     }
     for (const { row } of rows.values()) for (const child of row.children) {
       if (child.tagName?.toLowerCase() === 'button' || child.tagName?.toLowerCase() === 'select') child.disabled = busy;
@@ -364,6 +369,13 @@ export function initNativeRemoteAdmin({
   });
   for (const [id, action] of [['nativeStop', 'stop'], ['nativeInviteOpen', 'invite_open'], ['nativeInviteClose', 'invite_close']]) {
     el(id).addEventListener('click', () => act({ action }));
+  }
+  if (el('nativeMediaTransfer')) {
+    el('nativeMediaTransfer').addEventListener('change', () => {
+      const enabled = Boolean(el('nativeMediaTransfer').checked);
+      el('nativeMediaTransfer').checked = Boolean(current?.media_transfer_enabled);
+      return act({ action: 'set_media_transfer', enabled });
+    });
   }
   el('nativeRefresh').addEventListener('click', () => refresh({ checkBridge: true }));
   if (el('nativeBridgeEnable')) el('nativeBridgeEnable').addEventListener('click', () => runBridgeAction('enable'));

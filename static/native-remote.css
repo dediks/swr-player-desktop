@@ -80,6 +80,11 @@
 #androidRemoteModal .native-device button { min-height:34px; font-size:12px; }
 #androidRemoteModal .native-danger { color:var(--accent-red); margin-left:auto; }
 #androidRemoteModal .native-connected-note { font-size:12px; line-height:1.6; color:var(--text-muted); padding:10px 12px; background:var(--bg-recessed); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
+#androidRemoteModal .native-media-box { padding:10px 12px; background:var(--bg-recessed); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
+#androidRemoteModal .native-media-toggle { display:flex; align-items:flex-start; gap:10px; cursor:pointer; }
+#androidRemoteModal .native-media-toggle input[type="checkbox"] { width:16px; height:16px; margin-top:2px; accent-color:var(--accent-cyan); flex-shrink:0; }
+#androidRemoteModal .native-media-toggle span { display:flex; flex-direction:column; gap:2px; font-size:12px; line-height:1.45; }
+#androidRemoteModal .native-media-toggle small { font-size:11px; color:var(--text-muted); }
 #androidRemoteModal .native-add { min-height:36px; justify-content:center; }
 #androidRemoteModal .native-invite-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
 #androidRemoteModal .native-invite-actions .native-add { flex:1; }

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 
 from secure_remote import RemoteError, encode_remote_json
 
@@ -74,12 +75,15 @@ class NativeTLSServer(HTTPServer):
     allow_reuse_address = os.name == 'posix'
     request_queue_size = 16
     CONNECTION_TTL = 6
+    MEDIA_CONNECTION_TTL = 120
 
     def __init__(self, address, owner, context):
         self.owner, self.context = owner, context
         self.slots = threading.BoundedSemaphore(16)
+        self.media_slots = threading.BoundedSemaphore(2)
         self.sockets = set()
         self.workers = set()
+        self.connection_timers = {}
         self.guard = threading.Lock()
         self.closing = False
         self.buckets = {'all': [120.0, time.monotonic()], 'pair': [10.0, time.monotonic()]}
@@ -119,8 +123,13 @@ class NativeTLSServer(HTTPServer):
             except OSError:
                 pass
             connection.close()
+        timer_box = [None]
+        tid = threading.get_ident()
+        with self.guard:
+            self.connection_timers[tid] = (deadline, timer_box)
         timer = threading.Timer(self.CONNECTION_TTL, deadline)
         timer.daemon = True
+        timer_box[0] = timer
         timer.start()
         try:
             raw.settimeout(3)
@@ -135,7 +144,11 @@ class NativeTLSServer(HTTPServer):
         except (OSError, ValueError):
             pass  # Never print raw requests, credentials, SSL or parser exceptions.
         finally:
-            timer.cancel()
+            with self.guard:
+                entry = self.connection_timers.pop(tid, None)
+            active_timer = entry[1][0] if entry else timer
+            if active_timer is not None:
+                active_timer.cancel()
             # Send TLS close_notify before closing a connection whose rejected
             # body may still be in flight. Never drain unbounded attacker data.
             if isinstance(connection, ssl.SSLSocket):
@@ -151,6 +164,22 @@ class NativeTLSServer(HTTPServer):
                 self.sockets.discard(connection)
                 self.workers.discard(threading.current_thread())
             self.slots.release()
+
+    def extend_deadline(self, ttl_seconds):
+        tid = threading.get_ident()
+        with self.guard:
+            if self.closing:
+                return
+            entry = self.connection_timers.get(tid)
+            if not entry:
+                return
+            deadline_fn, timer_box = entry
+            if timer_box[0] is not None:
+                timer_box[0].cancel()
+            new_timer = threading.Timer(ttl_seconds, deadline_fn)
+            new_timer.daemon = True
+            timer_box[0] = new_timer
+            new_timer.start()
 
     def server_close(self):
         with self.guard:
@@ -195,7 +224,8 @@ class NativeHandler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Connection', 'close')
         self.end_headers()
-        self.wfile.write(body)
+        if getattr(self, 'command', None) != 'HEAD':
+            self.wfile.write(body)
 
     def parse_request(self):
         valid = super().parse_request()
@@ -244,12 +274,63 @@ class NativeHandler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError, RecursionError):
             raise RemoteError('invalid_json', 400) from None
 
+    def _serve_media(self, token, track_id, owner):
+        media_ref = owner.authorize_media(token, track_id)
+        if not self.server.media_slots.acquire(blocking=False):
+            raise RemoteError('media_busy', 429)
+        stream = None
+        try:
+            self.server.extend_deadline(self.server.MEDIA_CONNECTION_TTL)
+            try:
+                self.connection.settimeout(15)
+            except (OSError, ValueError):
+                pass
+            stream, mime_type, size_bytes, sha256_hex, filename = owner.open_media_file(
+                media_ref,
+                need_stream=(self.command == 'GET'),
+            )
+            ascii_name = ''.join(
+                ch if 32 <= ord(ch) <= 126 and ch not in ('"', '\\', ';') else '_'
+                for ch in filename
+            ) or 'audio'
+            encoded_name = urllib.parse.quote(filename, safe='')
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header('Content-Type', mime_type)
+            self.send_header('Content-Length', str(size_bytes))
+            self.send_header('X-Swararia-Sha256', sha256_hex)
+            self.send_header('X-Swararia-Filename', encoded_name)
+            self.send_header('Content-Disposition', f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            if stream is not None:
+                try:
+                    remaining = size_bytes
+                    while remaining > 0:
+                        chunk = stream.read(min(65536, remaining))
+                        if not chunk:
+                            self.connection.close()
+                            return
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                    self.wfile.flush()
+                except OSError:
+                    self.close_connection = True
+                    return
+        finally:
+            if stream is not None:
+                stream.close()
+            self.server.media_slots.release()
+
     def _dispatch(self):
         owner = self.server.owner
         self.server.rate('all')
         fixed = {'/v1/pair', '/v1/session', '/v1/capabilities', '/v1/state', '/v1/tracks', '/v1/commands'}
         status_route = re.fullmatch(r'/v1/commands/([A-Za-z0-9_-]{24})', self.path)
-        if self.path not in fixed and not status_route:
+        media_route = re.fullmatch(r'/v1/tracks/([A-Za-z0-9_-]{3,32})/media', self.path)
+        if self.path not in fixed and not status_route and not media_route:
             raise RemoteError('unknown_route', 404)
         if self.headers.get('Origin') or self.headers.get('Sec-Fetch-Site'):
             raise RemoteError('native_clients_only')
@@ -281,11 +362,15 @@ class NativeHandler(BaseHTTPRequestHandler):
                     raise RemoteError('invalid_fields', 400)
                 return 202, owner.command(self._token(), action, payload['idempotency_key'])
             raise RemoteError('method_not_allowed', 405)
-        if self.command != 'GET':
+        allowed_read = self.command == 'GET' or (self.command == 'HEAD' and media_route is not None)
+        if not allowed_read:
             raise RemoteError('method_not_allowed', 405)
         if self.headers.get_all('Transfer-Encoding') or self.headers.get('Content-Length', '0') != '0':
             raise RemoteError('invalid_length', 400)
         token = self._token()
+        if media_route:
+            self._serve_media(token, media_route[1], owner)
+            return None
         if self.path == '/v1/session':
             return 200, owner.session(token)
         if self.path == '/v1/state':
@@ -295,19 +380,15 @@ class NativeHandler(BaseHTTPRequestHandler):
         if status_route:
             return 200, owner.command_status(token, status_route[1])
         if self.path == '/v1/capabilities':
-            with owner.lock:
-                owner._device(token, active=True)
             extended = self.headers.get_all('X-Swararia-Capabilities', []) == ['extended-v1']
-            actions = owner.ALLOWED_ACTIONS if extended else ('play', 'pause', 'stop')
-            return 200, {'protocol': 'v1', 'commands': list(actions),
-                         'media': False, 'command_ttl_seconds': owner.COMMAND_TTL,
-                         'idempotency_ttl_seconds': owner.RECORD_TTL}
+            return 200, owner.capabilities_for(token, extended=extended)
         raise RemoteError('method_not_allowed', 405)
 
     def do_GET(self):
         try:
-            status, data = self._dispatch()
-            self.reply(status, data)
+            res = self._dispatch()
+            if res is not None:
+                self.reply(res[0], res[1])
         except RemoteError as exc:
             self.reply(exc.status, {'code': exc.code})
         except (OSError, ValueError, TypeError, RecursionError):

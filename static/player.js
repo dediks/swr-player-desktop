@@ -3834,11 +3834,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const tid = getNativeTrackId(f.rel_path);
       if (!tid) continue;
       const folderKey = typeof f.folder === 'string' && f.folder ? f.folder.split(/[/\\]/)[0] : '__ROOT__';
-      items.push({ id: tid, title: String(f.name).slice(0, 140), group_id: getNativeGroupId(folderKey) });
+      items.push({ id: tid, title: String(f.name).slice(0, 140), group_id: getNativeGroupId(folderKey), rel_path: f.rel_path });
     }
+    const sourceDir = typeof currentSourceDir === 'string' && currentSourceDir ? currentSourceDir : null;
     const activeGroupId = getNativeGroupId(pl);
-    const sig = activeGroupId + '|' + playlistLabel + '|' + groups.map(g => `${g.id}:${g.count}`).join(',') + '|' + items.map(it => it.id).join(',');
-    return { sig, payload: { playlist: playlistLabel, active_group_id: activeGroupId, total_tracks: plFiles.length, groups, items } };
+    const sig = (sourceDir || '') + '|' + activeGroupId + '|' + playlistLabel + '|' + groups.map(g => `${g.id}:${g.count}`).join(',') + '|' + items.map(it => it.id).join(',');
+    return { sig, payload: { source_dir: sourceDir, playlist: playlistLabel, active_group_id: activeGroupId, total_tracks: plFiles.length, groups, items } };
   }
   const consumeNativeCommand = createNativeCommandConsumer({
     media: () => audioEl,
