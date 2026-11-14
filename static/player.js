@@ -95,9 +95,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const eqTabBadge = document.getElementById('eqTabBadge');
   const outputTabBadge = document.getElementById('outputTabBadge');
+  const fadeTabBadge = document.getElementById('fadeTabBadge');
   const dspRackBody = document.getElementById('dspRackBody');
   const dspRackTabs = Array.from(document.querySelectorAll('.dsp-rack-tab'));
   const dspRackPanes = Array.from(document.querySelectorAll('.dsp-rack-pane'));
+  const fadeInButtons = Array.from(document.querySelectorAll('[data-fade-in]'));
+  const fadeOutButtons = Array.from(document.querySelectorAll('[data-fade-out]'));
 
   // DOM References - Cue Pads & Setlist Table
   const cuePadsGrid = document.getElementById('cuePadsGrid');
@@ -231,6 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
   let isSeeking = false;
   let isFadingOut = false;
   let fadeTimerId = null;
+  let globalFadeInSec = 0;
+  let globalFadeOutSec = 0;
+  let fadePhase = 'none'; // 'none' | 'in' | 'out'
+  let fadeRampFromGain = 1.0;
+  let fadeRampToGain = 1.0;
+  let fadeRampDurationSec = 0;
+  let fadeRampStartedAtMs = 0;
+  let fadePendingAction = null;
   let isAuditRunning = false;
   let isPageUnloading = false;
   let hasRestoredInitialSession = false;
@@ -324,28 +335,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function clampFadeSec(val) {
+    const num = Number(val);
+    if (!Number.isFinite(num) || num <= 0) return 0;
+    return Math.min(10, Math.round(num * 10) / 10);
+  }
+
   function loadPlayerPrefs() {
     try {
       const raw = localStorage.getItem(PLAYER_PREFS_STORAGE_KEY);
-      if (!raw) return;
-      const prefs = JSON.parse(raw);
-      if (prefs.playMode && ['cue', 'continuous', 'loop'].includes(prefs.playMode)) {
-        playMode = prefs.playMode;
-      }
-      if (typeof prefs.volume === 'number' && volumeSlider) {
-        volumeSlider.value = String(Math.max(0, Math.min(100, prefs.volume)));
-      }
-      if (typeof prefs.autoTrim === 'boolean' && chkAutoTrim) {
-        chkAutoTrim.checked = prefs.autoTrim;
-      }
-      if (typeof prefs.cuePadsCollapsed_v2 === 'boolean') {
-        cuePadsCollapsed = prefs.cuePadsCollapsed_v2;
-      } else {
-        cuePadsCollapsed = true;
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        if (prefs.playMode && ['cue', 'continuous', 'loop'].includes(prefs.playMode)) {
+          playMode = prefs.playMode;
+        }
+        if (typeof prefs.volume === 'number' && volumeSlider) {
+          volumeSlider.value = String(Math.max(0, Math.min(100, prefs.volume)));
+        }
+        if (typeof prefs.autoTrim === 'boolean' && chkAutoTrim) {
+          chkAutoTrim.checked = prefs.autoTrim;
+        }
+        if (typeof prefs.cuePadsCollapsed_v2 === 'boolean') {
+          cuePadsCollapsed = prefs.cuePadsCollapsed_v2;
+        } else {
+          cuePadsCollapsed = true;
+        }
+        if (typeof prefs.fadeInSec === 'number') {
+          globalFadeInSec = clampFadeSec(prefs.fadeInSec);
+        }
+        if (typeof prefs.fadeOutSec === 'number') {
+          globalFadeOutSec = clampFadeSec(prefs.fadeOutSec);
+        }
       }
     } catch (_e) {
       // Ignore parse errors
     }
+    syncFadeSettingsUI();
   }
 
   function savePlayerPrefs() {
@@ -358,6 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
           autoTrim: chkAutoTrim ? Boolean(chkAutoTrim.checked) : true,
           cuePadsCollapsed,
           cuePadsCollapsed_v2: cuePadsCollapsed,
+          fadeInSec: globalFadeInSec,
+          fadeOutSec: globalFadeOutSec,
         })
       );
     } catch (_e) {
@@ -894,16 +921,194 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function cancelActiveFade() {
+  function formatFadeSecShort(sec) {
+    const clean = clampFadeSec(sec);
+    if (clean <= 0) return 'Off';
+    return Number.isInteger(clean) ? `${clean}s` : `${clean.toFixed(1)}s`;
+  }
+
+  function getGlobalFadeInSec() {
+    return clampFadeSec(globalFadeInSec);
+  }
+
+  function getGlobalFadeOutSec() {
+    return clampFadeSec(globalFadeOutSec);
+  }
+
+  function getManualFadeOutSec() {
+    const configured = getGlobalFadeOutSec();
+    return configured > 0 ? configured : 3.0;
+  }
+
+  function syncFadeSettingsUI() {
+    const inVal = getGlobalFadeInSec();
+    const outVal = getGlobalFadeOutSec();
+    if (fadeTabBadge) {
+      fadeTabBadge.textContent = `${formatFadeSecShort(inVal)} / ${formatFadeSecShort(outVal)}`;
+      fadeTabBadge.classList.toggle('active-warn', inVal > 0 || outVal > 0);
+    }
+    fadeInButtons.forEach(btn => {
+      const btnVal = clampFadeSec(btn.dataset.fadeIn);
+      btn.classList.toggle('active', Math.abs(btnVal - inVal) < 0.05);
+    });
+    fadeOutButtons.forEach(btn => {
+      const btnVal = clampFadeSec(btn.dataset.fadeOut);
+      btn.classList.toggle('active', Math.abs(btnVal - outVal) < 0.05);
+    });
+  }
+
+  function proportionalFadeSec(fullSec, fromGain, toGain) {
+    const clampedFull = clampFadeSec(fullSec);
+    if (clampedFull <= 0) return 0;
+    const delta = Math.max(0, Math.min(1, Math.abs(toGain - fromGain)));
+    if (delta <= 0.001) return 0;
+    return Math.max(0.04, clampedFull * delta);
+  }
+
+  function readCurrentFadeGain() {
+    if (fadePhase === 'none' || fadeRampDurationSec <= 0) return 1.0;
+    const elapsedSec = Math.max(0, (Date.now() - fadeRampStartedAtMs) / 1000);
+    const t = Math.min(1, elapsedSec / fadeRampDurationSec);
+    return Math.max(0.0001, Math.min(1.0, fadeRampFromGain + (fadeRampToGain - fadeRampFromGain) * t));
+  }
+
+  function clearFadeTimersOnly() {
     if (fadeTimerId) {
       clearTimeout(fadeTimerId);
       fadeTimerId = null;
     }
     isFadingOut = false;
+    fadePhase = 'none';
+    fadePendingAction = null;
+    fadeRampDurationSec = 0;
+  }
+
+  function cancelActiveFade() {
+    clearFadeTimersOnly();
+    fadeRampFromGain = 1.0;
+    fadeRampToGain = 1.0;
     if (fadeGainNode && audioCtx) {
       fadeGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
       fadeGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
     }
+  }
+
+  function prepareFadeForPlay(opts = {}) {
+    if (!audioEl || opts.immediate || opts.fromRemoteSync || opts.isSessionRestore) {
+      cancelActiveFade();
+      return { activeFadeIn: false, startGain: 1.0, durationSec: 0, keepRunning: false };
+    }
+    const configuredIn = getGlobalFadeInSec();
+    if (fadePhase === 'out') {
+      const currentGain = readCurrentFadeGain();
+      const dur = configuredIn > 0
+        ? proportionalFadeSec(configuredIn, currentGain, 1.0)
+        : proportionalFadeSec(0.15, currentGain, 1.0);
+      clearFadeTimersOnly();
+      return { activeFadeIn: dur > 0, startGain: currentGain, durationSec: dur, keepRunning: false };
+    }
+    if (fadePhase === 'in') {
+      return { activeFadeIn: false, startGain: readCurrentFadeGain(), durationSec: 0, keepRunning: !audioEl.paused };
+    }
+    if (configuredIn > 0 && audioEl.paused) {
+      clearFadeTimersOnly();
+      return { activeFadeIn: true, startGain: 0.0001, durationSec: configuredIn, keepRunning: false };
+    }
+    cancelActiveFade();
+    return { activeFadeIn: false, startGain: 1.0, durationSec: 0, keepRunning: false };
+  }
+
+  function applyFadeStartGain(gainVal) {
+    if (fadeGainNode && audioCtx) {
+      fadeGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      fadeGainNode.gain.setValueAtTime(Math.max(0.0001, Math.min(1.0, gainVal)), audioCtx.currentTime);
+    }
+  }
+
+  function beginFadeInRamp(startGain, durationSec) {
+    if (!durationSec || durationSec <= 0) {
+      cancelActiveFade();
+      return;
+    }
+    clearFadeTimersOnly();
+    fadePhase = 'in';
+    isFadingOut = false;
+    fadeRampFromGain = Math.max(0.0001, Math.min(1.0, startGain));
+    fadeRampToGain = 1.0;
+    fadeRampDurationSec = durationSec;
+    fadeRampStartedAtMs = Date.now();
+    if (fadeGainNode && audioCtx) {
+      const now = audioCtx.currentTime;
+      fadeGainNode.gain.cancelScheduledValues(now);
+      fadeGainNode.gain.setValueAtTime(fadeRampFromGain, now);
+      fadeGainNode.gain.linearRampToValueAtTime(1.0, now + durationSec);
+    }
+    fadeTimerId = setTimeout(() => {
+      fadeTimerId = null;
+      fadePhase = 'none';
+      fadeRampFromGain = 1.0;
+      fadeRampToGain = 1.0;
+      fadeRampDurationSec = 0;
+      if (fadeGainNode && audioCtx) {
+        fadeGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        fadeGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      }
+    }, Math.max(20, Math.round(durationSec * 1000)));
+  }
+
+  function scheduleTransportFadeOut(durationSec, onComplete) {
+    if (!audioEl || audioEl.paused || isFadingOut) return false;
+    const clampedDur = clampFadeSec(durationSec);
+    if (clampedDur <= 0) return false;
+    ensureAudioGraph();
+    const startGain = fadePhase === 'in' ? readCurrentFadeGain() : 1.0;
+    const effectiveDur = fadePhase === 'in'
+      ? proportionalFadeSec(clampedDur, startGain, 0.0)
+      : clampedDur;
+    if (effectiveDur <= 0) return false;
+    clearFadeTimersOnly();
+    fadePhase = 'out';
+    isFadingOut = true;
+    fadePendingAction = onComplete;
+    fadeRampFromGain = startGain;
+    fadeRampToGain = 0.0001;
+    fadeRampDurationSec = effectiveDur;
+    fadeRampStartedAtMs = Date.now();
+    setTransportStateBadge('FADING');
+    if (fadeGainNode && audioCtx) {
+      const now = audioCtx.currentTime;
+      fadeGainNode.gain.cancelScheduledValues(now);
+      fadeGainNode.gain.setValueAtTime(startGain, now);
+      fadeGainNode.gain.linearRampToValueAtTime(0.0001, now + effectiveDur);
+    }
+    fadeTimerId = setTimeout(() => {
+      const action = fadePendingAction;
+      clearFadeTimersOnly();
+      if (typeof action === 'function') {
+        action();
+      }
+      if (fadeGainNode && audioCtx && fadePhase === 'none') {
+        fadeGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        fadeGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      }
+    }, Math.max(20, Math.round(effectiveDur * 1000)));
+    return true;
+  }
+
+  function handleTrackSwitchFade(fileObj, autoPlay, opts = {}) {
+    if (!fileObj || !audioEl) return false;
+    if (opts.skipFadeOut || opts.immediate || opts.fromRemoteSync || opts.isSessionRestore) return false;
+    if (isFadingOut) {
+      cancelActiveFade();
+      return false;
+    }
+    const fadeOutSec = getGlobalFadeOutSec();
+    if (!audioEl.paused && fadeOutSec > 0) {
+      return scheduleTransportFadeOut(fadeOutSec, () => {
+        loadTrack(fileObj, autoPlay, { ...opts, skipFadeOut: true });
+      });
+    }
+    return false;
   }
 
   function buildStreamUrl(fileObj) {
@@ -933,6 +1138,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
     if (opts.nativePlayback && !opts.nativePlayback.isCurrent()) return false;
+    if (typeof handleTrackSwitchFade === 'function' && handleTrackSwitchFade(fileObj, autoPlay, opts)) {
+      return true;
+    }
     cancelActiveFade();
     ensureAudioGraph();
 
@@ -993,6 +1201,8 @@ document.addEventListener('DOMContentLoaded', () => {
         isSessionRestore: Boolean(opts.isSessionRestore),
         startTime,
         nativePlayback: opts.nativePlayback,
+        immediate: Boolean(opts.immediate),
+        fromRemoteSync: Boolean(opts.fromRemoteSync),
       });
     } else {
       setTransportStateBadge('CUED');
@@ -1023,7 +1233,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    cancelActiveFade();
+    const fadePlan = typeof prepareFadeForPlay === 'function'
+      ? prepareFadeForPlay(opts)
+      : (cancelActiveFade(), { activeFadeIn: false, startGain: 1.0, durationSec: 0, keepRunning: false });
+    if (fadePlan.keepRunning) return true;
+
     ensureAudioGraph();
     if (audioCtx && audioCtx.state === 'suspended') {
       try {
@@ -1033,6 +1247,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     connectMediaElementToGraphIfReady();
+    if (fadePlan.activeFadeIn && typeof applyFadeStartGain === 'function') {
+      applyFadeStartGain(fadePlan.startGain);
+    }
 
     try {
       // resume() and authorization can outlive a command or a newer transport
@@ -1042,6 +1259,9 @@ document.addEventListener('DOMContentLoaded', () => {
           (opts.nativePlayback && !opts.nativePlayback.isCurrent())) return false;
       await audioEl.play();
       if (intentVersion !== transportIntentVersion) return false;
+      if (fadePlan.activeFadeIn && typeof beginFadeInRamp === 'function') {
+        beginFadeInRamp(fadePlan.startGain, fadePlan.durationSec);
+      }
       if (requestRtaWake) requestRtaWake();
       pendingAutoResumeOnGesture = false;
       setTransportStateBadge('PLAYING');
@@ -1052,6 +1272,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     } catch (err) {
       if (intentVersion !== transportIntentVersion) return false;
+      cancelActiveFade();
       if (opts && opts.nativePlayback) return false;
       if (opts && opts.isSessionRestore) {
         pendingAutoResumeOnGesture = true;
@@ -1076,40 +1297,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function pauseCurrentTrack() {
-    if (isRemoteController) {
-      sendRemoteCommand('pause');
-      return;
-    }
-    transportIntentVersion++;
-    if (!audioEl) return;
-    pendingAutoResumeOnGesture = false;
-    cancelActiveFade();
+  function commitTransportStopUi(resetToCue) {
     audioEl.pause();
-    setTransportStateBadge('PAUSED');
+    if (resetToCue) {
+      audioEl.currentTime = 0;
+      updateTimecodeUI();
+      setTransportStateBadge(activeTrackObj ? 'CUED' : 'STANDBY');
+    } else {
+      setTransportStateBadge('PAUSED');
+    }
     syncPlayPauseButton(false);
     highlightActiveRowInTable();
     renderCuePads();
     savePlaybackSessionState(false);
   }
 
-  function stopAndResetCue() {
+  function stopOrPauseWithFade(resetToCue, opts = {}) {
     if (isRemoteController) {
-      sendRemoteCommand('stop');
+      sendRemoteCommand(resetToCue ? 'stop' : 'pause');
       return;
     }
     transportIntentVersion++;
     if (!audioEl) return;
     pendingAutoResumeOnGesture = false;
+    const allowFade = !opts.immediate && !opts.fromRemoteSync &&
+      !(typeof isFadingOut !== 'undefined' && isFadingOut) &&
+      !audioEl.paused &&
+      typeof getGlobalFadeOutSec === 'function' && getGlobalFadeOutSec() > 0 &&
+      typeof scheduleTransportFadeOut === 'function';
+    if (allowFade && scheduleTransportFadeOut(getGlobalFadeOutSec(), () => commitTransportStopUi(resetToCue))) {
+      return;
+    }
     cancelActiveFade();
-    audioEl.pause();
-    audioEl.currentTime = 0;
-    updateTimecodeUI();
-    setTransportStateBadge(activeTrackObj ? 'CUED' : 'STANDBY');
-    syncPlayPauseButton(false);
-    highlightActiveRowInTable();
-    renderCuePads();
-    savePlaybackSessionState(false);
+    commitTransportStopUi(resetToCue);
+  }
+
+  function pauseCurrentTrack(opts = {}) {
+    stopOrPauseWithFade(false, opts);
+  }
+
+  function stopAndResetCue(opts = {}) {
+    stopOrPauseWithFade(true, opts);
   }
 
   function triggerSmoothFadeOut(durationSec = 3.0) {
@@ -1118,6 +1346,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
     if (!audioEl || audioEl.paused || isFadingOut) return false;
+    if (typeof scheduleTransportFadeOut === 'function') {
+      return scheduleTransportFadeOut(durationSec, () => {
+        audioEl.pause();
+        setTransportStateBadge('PAUSED');
+        syncPlayPauseButton(false);
+        highlightActiveRowInTable();
+        renderCuePads();
+        savePlaybackSessionState(false);
+      });
+    }
     ensureAudioGraph();
     isFadingOut = true;
     setTransportStateBadge('FADING');
@@ -1382,19 +1620,19 @@ document.addEventListener('DOMContentLoaded', () => {
       cancelActiveFade();
       if (playMode === 'loop') {
         audioEl.currentTime = 0;
-        playCurrentTrack();
+        playCurrentTrack({ immediate: true });
         return;
       }
 
       const nextTrack = getAdjacentTrack(1);
       if (playMode === 'continuous' && nextTrack) {
-        loadTrack(nextTrack, true);
+        loadTrack(nextTrack, true, { immediate: true });
         return;
       }
 
       // Default Soundman CUE MODE: Auto-Stop at end of song & cue next track safely!
       if (nextTrack) {
-        loadTrack(nextTrack, false);
+        loadTrack(nextTrack, false, { immediate: true });
         notify({
           type: 'info',
           title: 'Cue Mode: Auto-Stop Selesai',
@@ -1402,7 +1640,7 @@ document.addEventListener('DOMContentLoaded', () => {
           duration: 3800,
         });
       } else {
-        stopAndResetCue();
+        stopAndResetCue({ immediate: true });
       }
     });
   }
@@ -2268,9 +2506,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCue.title = 'Load track to Master Deck at 00:00.0 Cue Point (Standby)';
     btnCue.addEventListener('click', e => {
       e.stopPropagation();
-      if (!isRemoteController && audioEl && !audioEl.paused) {
-        audioEl.pause();
-      }
       loadTrack(fileObj, false);
     });
 
@@ -2585,6 +2820,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Global Fade In / Fade Out Settings Chips
+  fadeInButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      globalFadeInSec = clampFadeSec(btn.dataset.fadeIn);
+      syncFadeSettingsUI();
+      savePlayerPrefs();
+    });
+  });
+  fadeOutButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      globalFadeOutSec = clampFadeSec(btn.dataset.fadeOut);
+      syncFadeSettingsUI();
+      savePlayerPrefs();
+    });
+  });
+
   if (btnResetPeak) {
     btnResetPeak.addEventListener('click', () => {
       maxPeakHoldDb = -Infinity;
@@ -2848,7 +3099,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (e.key === 'f' || e.key === 'F') {
       e.preventDefault();
-      triggerSmoothFadeOut(3.0);
+      triggerSmoothFadeOut(getManualFadeOutSec());
     } else if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
       stopAndResetCue();
@@ -3634,7 +3885,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       }
       case 'fade':
-        triggerSmoothFadeOut(Number(p.duration) || 3.0);
+        triggerSmoothFadeOut(Number(p.duration) || getManualFadeOutSec());
         break;
       case 'seek_ratio':
         if (audioEl && Number.isFinite(audioEl.duration) && audioEl.duration > 0) {
@@ -3861,13 +4112,16 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     execute: (action, nativePlayback, cmd) => {
       if (action === 'play') return playCurrentTrack({ nativePlayback });
-      if (action === 'pause') return pauseCurrentTrack();
-      if (action === 'stop') return stopAndResetCue();
-      if (action === 'fade_out') return triggerSmoothFadeOut(3.0);
+      if (action === 'pause') return pauseCurrentTrack({ immediate: true });
+      if (action === 'stop') return stopAndResetCue({ immediate: true });
+      if (action === 'fade_out') {
+        const manualSec = typeof getManualFadeOutSec === 'function' ? getManualFadeOutSec() : 3.0;
+        return triggerSmoothFadeOut(manualSec);
+      }
       if (action === 'prev' || action === 'next') {
         const adj = typeof getAdjacentTrack === 'function' ? getAdjacentTrack(action === 'prev' ? -1 : 1) : null;
         if (!adj) return false;
-        return loadTrack(adj, Boolean(audioEl && !audioEl.paused), { nativePlayback });
+        return loadTrack(adj, Boolean(audioEl && !audioEl.paused), { nativePlayback, immediate: true });
       }
       if (action === 'select_track') {
         const tid = cmd && cmd.params ? cmd.params.track_id : null;
@@ -3876,7 +4130,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? allFiles.find(f => f && f.rel_path === rel)
           : null;
         if (!target) return false;
-        return loadTrack(target, Boolean(cmd && cmd.params && cmd.params.auto_play), { nativePlayback });
+        return loadTrack(target, Boolean(cmd && cmd.params && cmd.params.auto_play), { nativePlayback, immediate: true });
       }
       if (action === 'select_group') {
         const gid = cmd && cmd.params ? cmd.params.group_id : null;

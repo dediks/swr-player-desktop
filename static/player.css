@@ -675,9 +675,15 @@
 
 .dsp-rack-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   background: #161b26;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 720px) {
+  .dsp-rack-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .dsp-rack-tab {
@@ -869,6 +875,43 @@
   max-width: 210px;
   padding: 0.24rem 0.5rem;
   font-size: 0.7rem;
+}
+
+.fade-settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fade-setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.fade-setting-label {
+  font-size: 0.71rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.fade-setting-label small {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.fade-chip-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+  min-width: min(100%, 340px);
+}
+
+.fade-setting-note {
+  font-size: 0.67rem;
+  color: var(--text-muted);
 }
 
 /* ==========================================================================

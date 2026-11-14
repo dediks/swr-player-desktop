@@ -249,6 +249,10 @@
               <span class="dsp-tab-name">Auto-Trim &amp; Output</span>
               <span class="dsp-tab-badge accent" id="outputTabBadge">Auto -14 LUFS</span>
             </button>
+            <button type="button" class="dsp-rack-tab" data-dsp-tab="fade" role="tab" aria-selected="false">
+              <span class="dsp-tab-name">Global Fade</span>
+              <span class="dsp-tab-badge" id="fadeTabBadge">Off / Off</span>
+            </button>
           </div>
 
           <div class="dsp-rack-body" id="dspRackBody">
@@ -315,6 +319,39 @@
                     <option value="">Default System Audio</option>
                   </select>
                   <button type="button" id="btnRefreshDevices" class="btn-nudge" title="Refresh Audio Output Devices">Refresh</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab Pane 4: Global Playback Fade In & Fade Out -->
+            <div class="dsp-rack-pane hidden" id="dspPaneFade" data-dsp-pane="fade">
+              <div class="fade-settings-grid">
+                <div class="fade-setting-row">
+                  <span class="fade-setting-label">Fade In <small>(Play / Resume)</small></span>
+                  <div class="fade-chip-row" data-fade-kind="in">
+                    <button type="button" class="btn-route active" data-fade-in="0">Off</button>
+                    <button type="button" class="btn-route" data-fade-in="0.3">0.3s</button>
+                    <button type="button" class="btn-route" data-fade-in="0.5">0.5s</button>
+                    <button type="button" class="btn-route" data-fade-in="1">1s</button>
+                    <button type="button" class="btn-route" data-fade-in="2">2s</button>
+                    <button type="button" class="btn-route" data-fade-in="3">3s</button>
+                    <button type="button" class="btn-route" data-fade-in="5">5s</button>
+                  </div>
+                </div>
+                <div class="fade-setting-row">
+                  <span class="fade-setting-label">Fade Out <small>(Pause / Stop / Skip)</small></span>
+                  <div class="fade-chip-row" data-fade-kind="out">
+                    <button type="button" class="btn-route active" data-fade-out="0">Off</button>
+                    <button type="button" class="btn-route" data-fade-out="0.3">0.3s</button>
+                    <button type="button" class="btn-route" data-fade-out="0.5">0.5s</button>
+                    <button type="button" class="btn-route" data-fade-out="1">1s</button>
+                    <button type="button" class="btn-route" data-fade-out="2">2s</button>
+                    <button type="button" class="btn-route" data-fade-out="3">3s</button>
+                    <button type="button" class="btn-route" data-fade-out="5">5s</button>
+                  </div>
+                </div>
+                <div class="fade-setting-note">
+                  Tekan Pause/Stop/Next kedua kali saat fading untuk potong instan. Preview pencarian tetap instan tanpa fade.
                 </div>
               </div>
             </div>
