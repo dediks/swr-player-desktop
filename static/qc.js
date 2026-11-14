@@ -13,6 +13,7 @@ import {
   createFileNameCell,
   createGroupCollapseController,
   createSpectralBadge,
+  createQualityTierBadge,
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
@@ -73,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const rowElementsByPath = new Map();
   const groupDomMap = new Map();
   let isAuditRunning = false;
+  let lastAutoProbedSignature = '';
 
   const groupCollapseCtrl = createGroupCollapseController({
     expandedGroups,
@@ -191,6 +193,25 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFiltersAndRenderTable();
     updateSelectionUI();
     persistWorkspaceState();
+
+    const needsBitrateProbe = allFiles.some(f => !f.qc || !f.qc.codec || !f.qc.bitrate_kbps);
+    const probeSig = `${currentSourceDir}|${allFiles.length}`;
+    if (needsBitrateProbe && probeSig !== lastAutoProbedSignature) {
+      lastAutoProbedSignature = probeSig;
+      const probeDir = currentSourceDir;
+      apiPost('/api/probe', { source_dir: probeDir, probe_spectral: false }).then((probeRes) => {
+        if (!probeRes.ok || !Array.isArray(probeRes.data?.files)) return;
+        if (probeDir !== currentSourceDir) return;
+        allFiles = probeRes.data.files;
+        if (Array.isArray(probeRes.data.playlists)) {
+          allPlaylists = probeRes.data.playlists;
+        }
+        updateKpiCards();
+        renderPlaylists();
+        applyFiltersAndRenderTable();
+        updateSelectionUI();
+      });
+    }
     return true;
   }
 
@@ -401,8 +422,13 @@ document.addEventListener('DOMContentLoaded', () => {
         tdCodec.className = 'mono-cell';
         const extUpper = (f.ext || '').replace('.', '').toUpperCase();
         const codecStr = qc.codec ? `${extUpper} (${qc.codec})` : extUpper;
-        const brVal = qc.bitrate_kbps ? `${Math.round(parseFloat(qc.bitrate_kbps))} kbps` : `${f.size_mb} MB`;
-        tdCodec.textContent = `${codecStr} • ${brVal}`;
+        const brNum = qc.bitrate_kbps ? Math.round(parseFloat(qc.bitrate_kbps)) : 0;
+        const brVal = brNum > 0 ? `${brNum} kbps` : `${f.size_mb} MB`;
+        tdCodec.appendChild(document.createTextNode(`${codecStr} • ${brVal}`));
+        const tierBadge = createQualityTierBadge(f.ext, qc);
+        if (tierBadge) {
+          tdCodec.appendChild(tierBadge);
+        }
         tr.appendChild(tdCodec);
 
         // 4. Spektrum Frekuensi

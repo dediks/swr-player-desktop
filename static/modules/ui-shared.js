@@ -107,6 +107,80 @@ export function createSpectralBadge(qc) {
   return span;
 }
 
+/**
+ * Creates a concise stream quality tier badge (LOSSLESS or HQ >=192 kbps).
+ * @param {string | undefined} ext
+ * @param {Record<string, any> | null | undefined} qc
+ * @returns {HTMLSpanElement | null}
+ */
+export function createQualityTierBadge(ext, qc) {
+  if (!qc) return null;
+  const codec = String(qc.codec || '').toLowerCase();
+  const extLow = String(ext || '').toLowerCase();
+  const isLossless =
+    ['flac', 'alac', 'wavpack', 'ape', 'tta'].includes(codec) ||
+    codec.startsWith('pcm_') ||
+    ['.flac', '.wav', '.alac', '.aif', '.aiff'].includes(extLow);
+  const brNum = qc.bitrate_kbps ? Math.round(parseFloat(qc.bitrate_kbps)) : 0;
+
+  if (isLossless) {
+    const span = document.createElement('span');
+    span.className = 'quality-tier-badge lossless';
+    span.textContent = 'LOSSLESS';
+    span.title = 'Audio lossless (tanpa kompresi lossy)';
+    return span;
+  }
+  if (brNum >= 192) {
+    const span = document.createElement('span');
+    span.className = 'quality-tier-badge hq';
+    span.textContent = `HQ ${brNum}k`;
+    span.title = 'Stream High Quality (>= 192 kbps), setara YT Music Premium / Master';
+    return span;
+  }
+  return null;
+}
+
+/**
+ * Applies YouTube session cookie tier status consistently to indicator + label + pill button.
+ * @param {Record<string, any> | null | undefined} data
+ * @param {{ dot?: HTMLElement | null, val?: HTMLElement | null, btn?: HTMLElement | null }} els
+ */
+export function applyCookieStatusUI(data, els = {}) {
+  const status = String((data && data.cookies_status) || (data && data.cookies_present ? 'unchecked' : 'missing'));
+  const label = String((data && data.cookies_label) || '');
+  const note = String((data && data.cookies_note) || '');
+
+  let dotCls = 'status-indicator';
+  let btnMod = '';
+  let text = label || 'Mode Publik';
+
+  if (status === 'premium') {
+    dotCls = 'status-indicator active';
+    btnMod = 'is-premium';
+    text = label || 'YT Music Premium';
+  } else if (status === 'free') {
+    dotCls = 'status-indicator active';
+    btnMod = 'is-free';
+    text = label || 'Akun Standar';
+  } else if (status === 'unauthenticated') {
+    dotCls = 'status-indicator error';
+    btnMod = 'is-expired';
+    text = 'Cookies Kadaluarsa';
+  } else if (status === 'inconclusive' || status === 'unchecked') {
+    dotCls = 'status-indicator warning';
+    text = status === 'unchecked' ? 'Cek Sesi YT...' : 'Belum Terverifikasi';
+  } else {
+    text = 'Mode Publik';
+  }
+
+  if (els.dot) els.dot.className = dotCls;
+  if (els.val) els.val.textContent = text;
+  if (els.btn) {
+    els.btn.className = 'header-version-btn header-cookie-btn' + (btnMod ? ' ' + btnMod : '');
+    if (note) els.btn.title = `${text} — ${note} (Klik untuk verifikasi ulang)`;
+  }
+}
+
 const WORKSPACE_STORAGE_KEY = 'swararia_workspace_state_v1';
 
 /**
@@ -294,10 +368,28 @@ export function initAppHeader(opts = {}) {
   nav.appendChild(tabVideoSplit);
   nav.appendChild(tabPlayer);
 
-  // 3. Compact Header Actions (Version + Notification Center)
+  // 3. Compact Header Actions (YouTube Session Tier + Version + Notification Center)
   const statusGroup = document.createElement('div');
   statusGroup.className = 'header-actions-group';
   statusGroup.id = 'systemStatusGroup';
+
+  const cookieBtn = document.createElement('button');
+  cookieBtn.type = 'button';
+  cookieBtn.className = 'header-version-btn header-cookie-btn';
+  cookieBtn.id = 'headerCookieBtn';
+  cookieBtn.title = 'Status sesi YouTube Music Premium (klik untuk cek ulang)';
+
+  const cookieDot = document.createElement('span');
+  cookieDot.className = 'status-indicator';
+  cookieDot.id = 'headerCookieDot';
+
+  const cookieVal = document.createElement('span');
+  cookieVal.id = 'headerCookieVal';
+  cookieVal.textContent = 'Cek Sesi...';
+
+  cookieBtn.appendChild(cookieDot);
+  cookieBtn.appendChild(cookieVal);
+  statusGroup.appendChild(cookieBtn);
 
   const updateBtn = document.createElement('button');
   updateBtn.type = 'button';
@@ -331,22 +423,61 @@ export function initAppHeader(opts = {}) {
   headerEl.appendChild(nav);
   headerEl.appendChild(statusGroup);
 
-  function refreshStatus() {
+  let backgroundVerifyStarted = false;
+
+  function applyAndBroadcast(data) {
+    if (data.app_version) {
+      updateVal.textContent = 'v' + data.app_version;
+    }
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('swararia:system-status', { detail: data }));
+    }
+    if (typeof opts.onSystemData === 'function') {
+      opts.onSystemData(data);
+    }
+  }
+
+  function refreshStatus(verifyCookies = false) {
     return checkSystemStatus({
       updateVal: updateVal,
+      cookiesDot: cookieDot,
+      cookiesVal: cookieVal,
+      cookiesBtn: cookieBtn,
+      verifyCookies: verifyCookies,
       onData: (data) => {
-        if (data.app_version) {
-          updateVal.textContent = 'v' + data.app_version;
-        }
-        if (typeof opts.onSystemData === 'function') {
-          opts.onSystemData(data);
+        applyAndBroadcast(data);
+        if (!verifyCookies && !backgroundVerifyStarted && data.cookies_present && data.cookies_status === 'unchecked') {
+          backgroundVerifyStarted = true;
+          setTimeout(() => {
+            refreshStatus(true);
+          }, 120);
         }
       },
       onError: opts.onSystemError,
     });
   }
 
-  refreshStatus();
+  cookieBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cookieVal.textContent = 'Memeriksa...';
+    refreshStatus(true).then((data) => {
+      if (!data) return;
+      if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('swararia:header-cookie-click', { detail: data }));
+      }
+      const t = data.cookies_status === 'premium' ? 'success'
+        : data.cookies_status === 'unauthenticated' ? 'error'
+        : 'info';
+      notify({
+        type: t,
+        title: data.cookies_label || 'Status Cookies YouTube',
+        message: data.cookies_note || 'Verifikasi selesai.',
+        duration: 4200,
+      });
+    });
+  });
+
+  refreshStatus(false);
   initSpaRouter();
 
   // Background check for GitHub updates shortly after startup
@@ -389,12 +520,13 @@ export function appendLog(terminalEl, level, message) {
  * }} opts
  */
 export async function checkSystemStatus(opts = {}) {
-  const { ok, data, error } = await apiGet('/api/system');
+  const endpoint = opts.verifyCookies ? '/api/system?verify_cookies=1' : '/api/system';
+  const { ok, data, error } = await apiGet(endpoint);
   if (!ok) {
     if (error && typeof opts.onError === 'function') {
       opts.onError(new Error(error));
     }
-    return;
+    return null;
   }
 
   if (opts.pythonVal) {
@@ -422,14 +554,12 @@ export async function checkSystemStatus(opts = {}) {
     }
   }
 
-  if (opts.cookiesDot && opts.cookiesVal) {
-    if (data.cookies_present) {
-      opts.cookiesDot.className = 'status-indicator active';
-      opts.cookiesVal.textContent = 'cookies.txt';
-    } else {
-      opts.cookiesDot.className = 'status-indicator';
-      opts.cookiesVal.textContent = 'Browser';
-    }
+  if (opts.cookiesDot || opts.cookiesVal || opts.cookiesBtn) {
+    applyCookieStatusUI(data, {
+      dot: opts.cookiesDot || null,
+      val: opts.cookiesVal || null,
+      btn: opts.cookiesBtn || null,
+    });
   }
 
   if (opts.updateVal && data.app_version) {
@@ -439,6 +569,7 @@ export async function checkSystemStatus(opts = {}) {
   if (typeof opts.onData === 'function') {
     opts.onData(data);
   }
+  return data;
 }
 
 /**

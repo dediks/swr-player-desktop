@@ -33,6 +33,7 @@ import urllib.request
 import audio_manager
 import fs_browser
 import splitter_engine
+import youtube_login
 from task_engine import AudioMetadataCache, TaskQueueManager
 
 APP_VERSION = "1.0.0"
@@ -73,17 +74,45 @@ probe_files_fast = metadata_cache.probe_files_fast
 run_worker = task_manager.run_worker_loop
 
 
-def check_system_binaries() -> dict:
-    """Verifies available system binaries required for audio operations."""
+def check_system_binaries(verify_cookies: bool = False) -> dict:
+    """Verifies available system binaries and YouTube cookie tier status."""
+    cookies_present = COOKIES_FILE.is_file()
+    if not cookies_present:
+        cookie_info = audio_manager.check_youtube_cookies_tier(None)
+    elif verify_cookies:
+        cookie_info = audio_manager.check_youtube_cookies_tier(COOKIES_FILE, force_refresh=True)
+    else:
+        cached = audio_manager.get_cached_youtube_cookies_tier(COOKIES_FILE)
+        cookie_info = cached or {
+            "present": True,
+            "status": "unchecked",
+            "tier": "unknown",
+            "label": "cookies.txt (Perlu Cek)",
+            "note": "Memeriksa status login & langganan YT Music Premium...",
+            "checked_at": 0,
+        }
+
     return {
         "python": sys.version.split()[0],
         "yt_dlp": audio_manager.is_ytdlp_available(),
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "ffprobe": shutil.which("ffprobe") is not None,
-        "cookies_present": COOKIES_FILE.is_file(),
+        "cookies_present": cookies_present,
+        "cookies_status": cookie_info.get("status", "missing"),
+        "cookies_tier": cookie_info.get("tier", "unknown"),
+        "cookies_label": cookie_info.get("label", ""),
+        "cookies_note": cookie_info.get("note", ""),
+        "browser_login_available": bool(youtube_login.find_chromium_browser()[0]),
+        "browser_login_name": youtube_login.find_chromium_browser()[1] or "",
         "app_version": APP_VERSION,
         "github_repo": GITHUB_REPO,
     }
+
+
+login_session = youtube_login.YoutubeBrowserLoginSession(
+    COOKIES_FILE,
+    status_builder=lambda verify=False: check_system_binaries(verify_cookies=verify),
+)
 
 
 def _parse_semver(ver_str: str) -> tuple[int, ...]:
@@ -1946,7 +1975,14 @@ class AudioServerHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404, "File not found")
         elif path == "/api/system":
-            self.send_json(200, check_system_binaries())
+            qs = parse_qs(parsed.query)
+            verify_cookies = qs.get("verify_cookies", ["0"])[0] == "1"
+            self.send_json(200, check_system_binaries(verify_cookies=verify_cookies))
+        elif path == "/api/cookies/login/status":
+            if not is_local:
+                self.send_json(403, {"ok": False, "error": "Hanya Master Deck lokal yang dapat memeriksa sesi login."})
+                return
+            self.send_json(200, login_session.get_status())
         elif path == "/api/check-update":
             self.send_json(200, check_for_updates())
         elif path == "/api/undo-rename":
@@ -2270,6 +2306,20 @@ class AudioServerHandler(BaseHTTPRequestHandler):
         elif path == "/api/download":
             status, resp = task_manager.enqueue_downloads(payload)
             self.send_json(status, resp)
+        elif path == "/api/cookies":
+            self._handle_post_cookies(payload)
+        elif path == "/api/cookies/login/start":
+            if not self.local_request_allowed(write=True):
+                self.send_json(403, {"ok": False, "error": "Permintaan tulis lokal tidak diizinkan."})
+                return
+            reset_profile = bool((payload or {}).get("reset_profile", False))
+            status_code, resp = login_session.start_login(reset_profile=reset_profile)
+            self.send_json(status_code, resp)
+        elif path == "/api/cookies/login/cancel":
+            if not self.local_request_allowed(write=True):
+                self.send_json(403, {"ok": False, "error": "Permintaan tulis lokal tidak diizinkan."})
+                return
+            self.send_json(200, login_session.cancel_login())
         elif path == "/api/search":
             self._handle_post_search(payload)
         elif path == "/api/playlist/inspect":
@@ -2320,6 +2370,71 @@ class AudioServerHandler(BaseHTTPRequestHandler):
             })
         else:
             self.send_error(404, "Endpoint not found")
+
+    def _handle_post_cookies(self, payload: dict) -> None:
+        if not self.local_request_allowed(write=True):
+            self.send_json(403, {"ok": False, "error": "Permintaan tulis lokal tidak diizinkan."})
+            return
+        action = str((payload or {}).get("action") or "verify").strip().lower()
+        if action == "verify":
+            self.send_json(200, {"ok": True, **check_system_binaries(verify_cookies=True)})
+            return
+        if action == "delete":
+            try:
+                if COOKIES_FILE.is_file():
+                    COOKIES_FILE.unlink()
+            except OSError as exc:
+                self.send_json(500, {"ok": False, "error": f"Gagal menghapus file cookies: {exc}"})
+                return
+            self.send_json(200, {"ok": True, **check_system_binaries(verify_cookies=False)})
+            return
+        if action == "save":
+            raw_content = (payload or {}).get("content")
+            if not isinstance(raw_content, str):
+                self.send_json(400, {"ok": False, "error": "Konten cookies.txt harus berupa teks."})
+                return
+            normalized = raw_content.replace("\r\n", "\n").strip() + "\n"
+            raw_bytes = normalized.encode("utf-8", errors="ignore")
+            if len(raw_bytes) <= 2 or len(raw_bytes) > 524288:
+                self.send_json(400, {"ok": False, "error": "Ukuran cookies.txt tidak valid (maksimal 512 KB)."})
+                return
+            has_valid_row = False
+            for line in normalized.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("#HttpOnly_"):
+                    stripped = stripped[len("#HttpOnly_"):]
+                elif stripped.startswith("#"):
+                    continue
+                parts = stripped.split("\t")
+                if len(parts) >= 7:
+                    dom = parts[0].strip().lower()
+                    if "youtube.com" in dom or "google.com" in dom:
+                        has_valid_row = True
+                        break
+            if not has_valid_row:
+                self.send_json(400, {
+                    "ok": False,
+                    "error": "Format cookies.txt tidak valid atau tidak memuat cookie YouTube/Google format Netscape.",
+                })
+                return
+            try:
+                COOKIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp_name = tempfile.mkstemp(prefix=".cookies.", suffix=".tmp", dir=str(COOKIES_FILE.parent))
+                try:
+                    os.write(fd, raw_bytes)
+                finally:
+                    os.close(fd)
+                if os.name == "posix":
+                    os.chmod(tmp_name, 0o600)
+                os.replace(tmp_name, COOKIES_FILE)
+            except Exception as exc:
+                self.send_json(500, {"ok": False, "error": f"Gagal menyimpan cookies.txt: {exc}"})
+                return
+            self.send_json(200, {"ok": True, **check_system_binaries(verify_cookies=True)})
+            return
+        self.send_json(400, {"ok": False, "error": "Action /api/cookies tidak valid."})
 
     def _handle_post_search(self, payload: dict) -> None:
         query = str((payload or {}).get("query") or "").strip()

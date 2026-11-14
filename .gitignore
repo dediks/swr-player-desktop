@@ -57,6 +57,7 @@ downloaded_ids.txt
 *.cookies
 cookies.txt
 library/cookies.txt*
+library/ytm_browser_profile/
 *:Zone.Identifier
 
 # Operating System files

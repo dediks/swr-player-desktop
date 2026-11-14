@@ -289,9 +289,20 @@
                 <span class="ing-switch-track" aria-hidden="true"></span>
                 <span class="ing-switch-text">
                   <span class="ing-switch-title">Gunakan cookies sesi</span>
-                  <span class="ing-switch-hint">library/cookies.txt</span>
+                  <span class="ing-switch-hint" id="cookiesStatusHint">library/cookies.txt</span>
                 </span>
               </label>
+              <div class="ing-cookie-tools" id="ingCookieTools">
+                <div class="ing-cookie-status-line">
+                  <span class="status-indicator" id="ingCookieDot"></span>
+                  <span id="ingCookieStatusText">Memeriksa sesi YouTube...</span>
+                </div>
+                <div class="ing-cookie-btns">
+                  <button type="button" class="ing-mini-btn primary" id="btnBrowserLoginCookies">🔑 Login YouTube</button>
+                  <button type="button" class="ing-mini-btn" id="btnVerifyCookies">Cek Sesi</button>
+                  <button type="button" class="ing-mini-btn" id="btnManageCookies">Atur Manual</button>
+                </div>
+              </div>
             </div>
           </details>
         </div>
@@ -483,6 +494,64 @@
               <span>Tutup</span>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Kelola Sesi Cookies YouTube Music -->
+    <div class="modal-backdrop hidden" id="cookiesModal" role="dialog" aria-modal="true" aria-labelledby="cookiesModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="cookiesModalTitle">Kelola Sesi YouTube Music (cookies.txt)</h3>
+          <button type="button" class="btn-icon" id="btnCloseCookiesModal" aria-label="Tutup">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="ing-login-box">
+            <h4 class="ing-login-box-title">🔑 Login Otomatis via Jendela Browser (Tanpa Export cookies.txt)</h4>
+            <p class="ing-cookies-help">
+              Buka jendela login YouTube Music bawaan, masuk dengan akun Google/YouTube Music Premium Anda seperti biasa. Setelah login selesai, sesi <strong>256 kbps (Opus 774 / AAC 141)</strong> akan otomatis tersimpan dan jendela tertutup sendiri.
+            </p>
+            <div class="ing-login-box-actions">
+              <button type="button" id="btnModalBrowserLogin" class="btn-primary">
+                <span>Buka Jendela Login YouTube</span>
+              </button>
+              <button type="button" id="btnModalCancelLogin" class="btn-secondary hidden">
+                <span>Batalkan Login</span>
+              </button>
+              <label class="ing-login-reset-label">
+                <input type="checkbox" id="chkResetLoginProfile">
+                <span>Reset profil (ganti akun Google)</span>
+              </label>
+            </div>
+            <div class="ing-login-status-banner" id="cookiesLoginStatusBanner">Siap untuk login akun YouTube Music.</div>
+          </div>
+
+          <div class="ing-cookies-divider"><span>Atau impor cookies.txt manual</span></div>
+
+          <p class="ing-cookies-help">
+            Alternatif jika login otomatis tidak tersedia: ekspor cookies format Netscape dari <code>music.youtube.com</code>, lalu pilih file atau tempel di bawah.
+          </p>
+          <div class="ing-cookies-file-row">
+            <input type="file" id="cookiesFileInput" accept=".txt,text/plain">
+            <span class="ing-cookie-status-line" id="cookiesModalStatusText">Siap diperbarui.</span>
+          </div>
+          <textarea
+            id="cookiesPasteInput"
+            class="ing-cookies-textarea"
+            spellcheck="false"
+            placeholder="# Netscape HTTP Cookie File&#10;# Tempel isi cookies.txt di sini atau pilih file di atas..."
+          ></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnDeleteCookies" class="btn-secondary">
+            <span>Hapus cookies.txt</span>
+          </button>
+          <button type="button" id="btnSaveCookies" class="btn-primary">
+            <span>Simpan &amp; Verifikasi</span>
+          </button>
+          <button type="button" id="btnCloseCookiesBtn" class="btn-secondary">
+            <span>Tutup</span>
+          </button>
         </div>
       </div>
     </div>

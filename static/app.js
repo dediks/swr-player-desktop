@@ -18,6 +18,7 @@ import {
   notify,
   createQueueMonitor,
   openFolderInExplorer,
+  applyCookieStatusUI,
 } from './modules/ui-shared.js';
 
 const STAGING_KEY = 'ingest_staging_v1';
@@ -249,6 +250,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const optPlaylist = $('optPlaylist');
   const optAutoScan = $('optAutoScan');
   const optUseCookies = $('optUseCookies');
+  const cookiesStatusHint = $('cookiesStatusHint');
+  const ingCookieDot = $('ingCookieDot');
+  const ingCookieStatusText = $('ingCookieStatusText');
+  const btnBrowserLoginCookies = $('btnBrowserLoginCookies');
+  const btnVerifyCookies = $('btnVerifyCookies');
+  const btnManageCookies = $('btnManageCookies');
+  const cookiesModal = $('cookiesModal');
+  const btnCloseCookiesModal = $('btnCloseCookiesModal');
+  const btnCloseCookiesBtn = $('btnCloseCookiesBtn');
+  const btnModalBrowserLogin = $('btnModalBrowserLogin');
+  const btnModalCancelLogin = $('btnModalCancelLogin');
+  const chkResetLoginProfile = $('chkResetLoginProfile');
+  const cookiesLoginStatusBanner = $('cookiesLoginStatusBanner');
+  const cookiesFileInput = $('cookiesFileInput');
+  const cookiesPasteInput = $('cookiesPasteInput');
+  const cookiesModalStatusText = $('cookiesModalStatusText');
+  const btnSaveCookies = $('btnSaveCookies');
+  const btnDeleteCookies = $('btnDeleteCookies');
   const rawWebmToggleWrap = $('rawWebmToggleWrap');
   const keepOpusToggleWrap = $('keepOpusToggleWrap');
   const advancedPanel = $('advancedPanel');
@@ -294,6 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentResults = [];
   let isSubmitting = false;
   let lastMonitorSignature = '';
+  let latestSystemStatus = null;
 
   /** @type {ReturnType<typeof sanitizeItem>[]} */
   let staging = (readJson(STAGING_KEY, []) || []).map(sanitizeItem).filter(Boolean).slice(0, MAX_STAGING);
@@ -304,10 +324,54 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLog(terminalLogs, level, message);
   }
 
+  function getSongSpecInfo() {
+    const useCookiesChecked = optUseCookies ? optUseCookies.checked : true;
+    const isPremium = useCookiesChecked && latestSystemStatus?.cookies_status === 'premium';
+    if (isPremium) {
+      return { text: 'Opus / AAC • 256k Premium', isPremium: true };
+    }
+    return { text: 'Opus 48kHz • 160k', isPremium: false };
+  }
+
+  function syncSongSpecBadges() {
+    const spec = getSongSpecInfo();
+    document.querySelectorAll('.ing-result-spec[data-song-spec="1"]').forEach((node) => {
+      node.textContent = spec.text;
+      node.className = 'ing-result-spec mono-stat' + (spec.isPremium ? ' premium' : '');
+    });
+  }
+
+  function syncCookieStatusUI(data) {
+    if (!data || typeof data !== 'object') return;
+    latestSystemStatus = data;
+    applyCookieStatusUI(data, { dot: ingCookieDot, val: ingCookieStatusText });
+    if (cookiesStatusHint) {
+      const hint = data.cookies_status === 'premium'
+        ? '256k HQ siap dipakai'
+        : data.cookies_status === 'unauthenticated'
+          ? 'Cookies kadaluarsa! Perlu ekspor ulang'
+          : data.cookies_status === 'free'
+            ? 'Akun standar (~160k)'
+            : data.cookies_present
+              ? 'library/cookies.txt'
+              : 'Belum ada cookies.txt (Publik)';
+      cookiesStatusHint.textContent = hint;
+      cookiesStatusHint.dataset.defaultHint = hint;
+    }
+    if (btnDeleteCookies) {
+      btnDeleteCookies.disabled = !data.cookies_present;
+    }
+    if (cookiesModalStatusText && data.cookies_note) {
+      cookiesModalStatusText.textContent = `${data.cookies_label || 'Status'}: ${data.cookies_note}`;
+    }
+    syncSongSpecBadges();
+  }
+
   /* ---------------- System header ---------------- */
-  initAppHeader({
+  const headerCtrl = initAppHeader({
     activePage: 'ingest',
     onSystemData: (data) => {
+      syncCookieStatusUI(data);
       if (!data.yt_dlp || !data.ffmpeg) {
         systemNoticeCard.classList.remove('hidden');
         if (!data.yt_dlp) {
@@ -1147,7 +1211,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Stream spec pill in meta row
       if (item.kind === 'song' || item.type === 'song') {
-        metaRow.appendChild(el('span', 'ing-result-spec mono-stat', 'Opus 48kHz • 160k'));
+        const spec = getSongSpecInfo();
+        const specNode = el('span', 'ing-result-spec mono-stat' + (spec.isPremium ? ' premium' : ''), spec.text);
+        specNode.dataset.songSpec = '1';
+        metaRow.appendChild(specNode);
       } else if (item.kind === 'video' || item.type === 'video') {
         metaRow.appendChild(el('span', 'ing-result-spec video mono-stat', 'Video Audio'));
       } else if (isCollection) {
@@ -1393,6 +1460,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (optUseCookies.checked) active.push('Cookies');
     advancedSummary.textContent = active.length ? active.join(' · ') : 'Semua nonaktif';
 
+    syncSongSpecBadges();
     persistSettings();
     updateActionBar();
   }
@@ -1687,6 +1755,241 @@ document.addEventListener('DOMContentLoaded', () => {
     btnLogFilterAll.classList.remove('active');
     setLogFilter('errors');
   });
+
+  /* ---------------- Cookies management handlers ---------------- */
+  let loginPollTimer = null;
+
+  function stopLoginPolling() {
+    if (loginPollTimer) {
+      clearInterval(loginPollTimer);
+      loginPollTimer = null;
+    }
+  }
+
+  function applyBrowserLoginUI(statusData) {
+    if (!statusData || typeof statusData !== 'object') return;
+    const isActive = Boolean(statusData.active);
+    const available = statusData.browser_available !== false;
+    const bName = statusData.browser_name ? ` (${statusData.browser_name})` : '';
+    if (btnBrowserLoginCookies) {
+      btnBrowserLoginCookies.disabled = isActive || !available;
+      btnBrowserLoginCookies.textContent = isActive ? '⏳ Menunggu Login...' : '🔑 Login YouTube';
+    }
+    if (btnModalBrowserLogin) {
+      btnModalBrowserLogin.disabled = isActive || !available;
+      const span = btnModalBrowserLogin.querySelector('span');
+      if (span) {
+        span.textContent = isActive
+          ? `Menunggu Login${bName}...`
+          : `Buka Jendela Login YouTube${bName}`;
+      }
+    }
+    if (btnModalCancelLogin) {
+      btnModalCancelLogin.classList.toggle('hidden', !isActive);
+      btnModalCancelLogin.disabled = false;
+    }
+    if (cookiesLoginStatusBanner && statusData.message) {
+      cookiesLoginStatusBanner.textContent = statusData.message;
+    }
+    if (isActive && ingCookieStatusText && statusData.message) {
+      ingCookieStatusText.textContent = statusData.message;
+    }
+  }
+
+  async function pollBrowserLoginStatus() {
+    const { ok, data } = await apiGet('/api/cookies/login/status');
+    if (!ok || !data) return;
+    applyBrowserLoginUI(data);
+    if (!data.active) {
+      stopLoginPolling();
+      if (data.state === 'authenticated') {
+        if (optUseCookies && !optUseCookies.checked) {
+          optUseCookies.checked = true;
+          updateSettingsUI();
+        }
+        if (data.system_status) {
+          syncCookieStatusUI(data.system_status);
+        }
+        if (headerCtrl && typeof headerCtrl.refreshStatus === 'function') {
+          headerCtrl.refreshStatus(false);
+        }
+        notify({
+          type: data.system_status?.cookies_status === 'premium' ? 'success' : 'info',
+          title: data.system_status?.cookies_label || 'Login Berhasil',
+          message: data.message || 'Sesi YouTube berhasil disimpan otomatis.',
+          duration: 5000,
+        });
+        if (chkResetLoginProfile) chkResetLoginProfile.checked = false;
+        if (data.system_status?.cookies_status === 'premium') {
+          closeCookiesModal();
+        }
+      } else if (data.state === 'failed' || data.state === 'timeout') {
+        notify({ type: 'error', title: 'Login YouTube Gagal', message: data.message || 'Gagal menangkap sesi.', duration: 4500 });
+      }
+    }
+  }
+
+  async function triggerBrowserLogin() {
+    const resetProfile = Boolean(chkResetLoginProfile && chkResetLoginProfile.checked);
+    openCookiesModal();
+    if (cookiesLoginStatusBanner) {
+      cookiesLoginStatusBanner.textContent = 'Membuka jendela browser login YouTube Music...';
+    }
+    if (btnModalBrowserLogin) btnModalBrowserLogin.disabled = true;
+    if (btnBrowserLoginCookies) btnBrowserLoginCookies.disabled = true;
+
+    const { ok, data, error } = await apiPost('/api/cookies/login/start', { reset_profile: resetProfile });
+    if (!ok) {
+      applyBrowserLoginUI(data || { active: false, message: error });
+      notify({
+        type: 'error',
+        title: 'Tidak Dapat Membuka Browser Login',
+        message: error || data?.message || 'Browser Chromium/Chrome/Edge tidak tersedia.',
+        duration: 4500,
+      });
+      return;
+    }
+    applyBrowserLoginUI(data);
+    stopLoginPolling();
+    loginPollTimer = setInterval(pollBrowserLoginStatus, 1200);
+  }
+
+  function closeCookiesModal() {
+    if (!cookiesModal) return;
+    cookiesModal.classList.add('hidden');
+    if (cookiesPasteInput) cookiesPasteInput.value = '';
+    if (cookiesFileInput) cookiesFileInput.value = '';
+  }
+
+  function openCookiesModal() {
+    if (!cookiesModal) return;
+    if (cookiesPasteInput) cookiesPasteInput.value = '';
+    if (cookiesFileInput) cookiesFileInput.value = '';
+    if (cookiesModalStatusText && latestSystemStatus) {
+      cookiesModalStatusText.textContent = `${latestSystemStatus.cookies_label || 'Status'}: ${latestSystemStatus.cookies_note || ''}`;
+    }
+    if (latestSystemStatus && btnModalBrowserLogin) {
+      const span = btnModalBrowserLogin.querySelector('span');
+      const bName = latestSystemStatus.browser_login_name ? ` (${latestSystemStatus.browser_login_name})` : '';
+      if (span && !loginPollTimer) span.textContent = `Buka Jendela Login YouTube${bName}`;
+    }
+    cookiesModal.classList.remove('hidden');
+  }
+
+  window.addEventListener('swararia:system-status', (ev) => {
+    if (ev && ev.detail) syncCookieStatusUI(ev.detail);
+  });
+
+  window.addEventListener('swararia:header-cookie-click', (ev) => {
+    const d = ev && ev.detail;
+    if (d && d.cookies_status !== 'premium' && document.body?.dataset?.page === 'ingest') {
+      openCookiesModal();
+    }
+  });
+
+  if (btnBrowserLoginCookies) btnBrowserLoginCookies.addEventListener('click', triggerBrowserLogin);
+  if (btnModalBrowserLogin) btnModalBrowserLogin.addEventListener('click', triggerBrowserLogin);
+  if (btnModalCancelLogin) {
+    btnModalCancelLogin.addEventListener('click', async () => {
+      btnModalCancelLogin.disabled = true;
+      stopLoginPolling();
+      const { ok, data } = await apiPost('/api/cookies/login/cancel', {});
+      if (ok && data) applyBrowserLoginUI(data);
+    });
+  }
+
+  if (btnVerifyCookies) {
+    btnVerifyCookies.addEventListener('click', async () => {
+      if (ingCookieStatusText) ingCookieStatusText.textContent = 'Memeriksa...';
+      btnVerifyCookies.disabled = true;
+      const { ok, data, error } = await apiPost('/api/cookies', { action: 'verify' });
+      btnVerifyCookies.disabled = false;
+      if (!ok) {
+        notify({ type: 'error', title: 'Gagal Cek Sesi', message: error || 'Error', duration: 3500 });
+        return;
+      }
+      syncCookieStatusUI(data);
+      if (headerCtrl && typeof headerCtrl.refreshStatus === 'function') {
+        headerCtrl.refreshStatus(false);
+      }
+      notify({
+        type: data.cookies_status === 'premium' ? 'success' : data.cookies_status === 'unauthenticated' ? 'error' : 'info',
+        title: data.cookies_label || 'Status Sesi YouTube',
+        message: data.cookies_note || 'Pemeriksaan selesai.',
+        duration: 4200,
+      });
+    });
+  }
+
+  if (btnManageCookies) btnManageCookies.addEventListener('click', openCookiesModal);
+  if (btnCloseCookiesModal) btnCloseCookiesModal.addEventListener('click', closeCookiesModal);
+  if (btnCloseCookiesBtn) btnCloseCookiesBtn.addEventListener('click', closeCookiesModal);
+  if (cookiesModal) {
+    cookiesModal.addEventListener('click', (e) => {
+      if (e.target === cookiesModal) closeCookiesModal();
+    });
+  }
+  if (cookiesFileInput) {
+    cookiesFileInput.addEventListener('change', async () => {
+      const f = cookiesFileInput.files && cookiesFileInput.files[0];
+      if (!f) return;
+      if (f.size > 524288) {
+        notify({ type: 'error', title: 'File Terlalu Besar', message: 'Maksimal ukuran cookies.txt 512 KB.', duration: 3500 });
+        cookiesFileInput.value = '';
+        return;
+      }
+      const txt = await f.text();
+      if (cookiesPasteInput) cookiesPasteInput.value = txt;
+      if (cookiesModalStatusText) cookiesModalStatusText.textContent = `File ${f.name} siap disimpan & diverifikasi.`;
+    });
+  }
+  if (btnSaveCookies) {
+    btnSaveCookies.addEventListener('click', async () => {
+      const content = (cookiesPasteInput ? cookiesPasteInput.value : '').trim();
+      if (!content) {
+        notify({ type: 'error', title: 'Konten Kosong', message: 'Pilih file atau tempel isi cookies.txt terlebih dahulu.', duration: 3500 });
+        return;
+      }
+      btnSaveCookies.disabled = true;
+      if (cookiesModalStatusText) cookiesModalStatusText.textContent = 'Menyimpan & memverifikasi sesi ke YouTube...';
+      const { ok, data, error } = await apiPost('/api/cookies', { action: 'save', content });
+      btnSaveCookies.disabled = false;
+      if (cookiesPasteInput) cookiesPasteInput.value = '';
+      if (cookiesFileInput) cookiesFileInput.value = '';
+      if (!ok) {
+        if (cookiesModalStatusText) cookiesModalStatusText.textContent = error || 'Gagal menyimpan cookies.';
+        notify({ type: 'error', title: 'Gagal Simpan cookies.txt', message: error || 'Periksa format file.', duration: 4200 });
+        return;
+      }
+      syncCookieStatusUI(data);
+      if (headerCtrl && typeof headerCtrl.refreshStatus === 'function') {
+        headerCtrl.refreshStatus(false);
+      }
+      notify({
+        type: data.cookies_status === 'premium' ? 'success' : 'warning',
+        title: data.cookies_label || 'cookies.txt Disimpan',
+        message: data.cookies_note || 'Verifikasi selesai.',
+        duration: 4500,
+      });
+      if (data.cookies_status === 'premium') closeCookiesModal();
+    });
+  }
+  if (btnDeleteCookies) {
+    btnDeleteCookies.addEventListener('click', async () => {
+      btnDeleteCookies.disabled = true;
+      const { ok, data, error } = await apiPost('/api/cookies', { action: 'delete' });
+      if (!ok) {
+        btnDeleteCookies.disabled = false;
+        notify({ type: 'error', title: 'Gagal Menghapus', message: error || 'Error', duration: 3500 });
+        return;
+      }
+      syncCookieStatusUI(data);
+      if (headerCtrl && typeof headerCtrl.refreshStatus === 'function') {
+        headerCtrl.refreshStatus(false);
+      }
+      notify({ type: 'info', title: 'cookies.txt Dihapus', message: 'Aplikasi kembali ke Mode Publik / Browser.', duration: 3500 });
+    });
+  }
 
   /* ---------------- Init ---------------- */
   restoreSettings();

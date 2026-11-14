@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -103,6 +104,17 @@ STREAM_TIERS = {
     "249": "LOW TIER — Opus ~50 kbps (48 kHz, .webm)",
     "139": "LOW TIER — HE-AAC ~48 kbps (.m4a)",
 }
+
+# Explicit client + GVS PO-token bypass flag needed for yt-dlp >= 2026.x when using
+# YouTube Music Premium cookies (web_music / web_creator / tv_samsung expose 774 & 141).
+YOUTUBE_PREMIUM_EXTRACTOR_ARGS = "youtube:player_client=web_music,web_creator,tv_samsung,web;formats=missing_pot"
+_DESKTOP_CHROME_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+_COOKIES_TIER_CACHE_LOCK = threading.Lock()
+_COOKIES_TIER_CACHE: dict[tuple[str, int, int], tuple[float, dict]] = {}
+_COOKIES_TIER_TTL_S = 300.0
 
 
 def describe_format_tier(format_id: str) -> str:
@@ -261,7 +273,14 @@ def run_ytdlp_process(
 
             if any(
                 k in clean_line.lower()
-                for k in ("could not copy", "cookie database", "database is locked", "failed to extract cookies")
+                for k in (
+                    "could not copy",
+                    "cookie database",
+                    "database is locked",
+                    "failed to extract cookies",
+                    "no longer valid",
+                    "sign in to confirm",
+                )
             ):
                 cookie_err_detected = True
 
@@ -376,11 +395,20 @@ def metadata(path: Path) -> dict:
         raise ValueError("Tidak ada stream audio")
     fmt = data.get("format", {})
     bitrate = get_float(track.get("bit_rate") or fmt.get("bit_rate"))
+    duration_s = get_float(track.get("duration") or fmt.get("duration"))
+    # Containers like WebM/Opus often omit stream/format bit_rate; derive from file size.
+    if (not bitrate or bitrate <= 0) and duration_s and duration_s >= 1.0:
+        try:
+            size_bytes = path.stat().st_size
+            if size_bytes > 0:
+                bitrate = (size_bytes * 8.0) / duration_s
+        except OSError:
+            pass
     return {
         "codec": track.get("codec_name", "unknown"),
         "sample_rate_hz": track.get("sample_rate", ""),
         "channels": track.get("channels", ""),
-        "duration_s": get_float(track.get("duration") or fmt.get("duration")),
+        "duration_s": duration_s,
         "bitrate_kbps": round(bitrate / 1000, 1) if bitrate else "",
     }
 
@@ -636,6 +664,7 @@ def build_ytdlp_command(
     cookies_file: Path | None = None,
     cookie_browser: str | None = None,
     js_runtime: str | None = None,
+    premium_active: bool | None = None,
 ) -> tuple[list[str], str]:
     """Builds the yt-dlp command list and a human-readable target description."""
     norm_format = "opus" if audio_format in ("opus", "premium", "premium_aac") else audio_format
@@ -695,12 +724,26 @@ def build_ytdlp_command(
     ])
 
     auth_desc = "Public"
+    effective_premium = False
     if cookies_file and cookies_file.is_file():
         cmd.extend(["--cookies", str(cookies_file)])
-        auth_desc = "cookies.txt (YouTube Music Premium)"
+        if premium_active is None:
+            cached_tier = get_cached_youtube_cookies_tier(cookies_file)
+            effective_premium = bool(cached_tier and cached_tier.get("tier") == "premium")
+            tier_label = (cached_tier or {}).get("label")
+            auth_desc = f"cookies.txt ({tier_label})" if tier_label else "cookies.txt"
+        elif premium_active:
+            effective_premium = True
+            auth_desc = "cookies.txt (YT Music Premium)"
+        else:
+            auth_desc = "cookies.txt (Standar)"
     elif cookie_browser:
         cmd.extend(["--cookies-from-browser", cookie_browser])
-        auth_desc = cookie_browser
+        effective_premium = premium_active is not False
+        auth_desc = f"{cookie_browser} (Premium)" if effective_premium else cookie_browser
+
+    if effective_premium:
+        cmd.extend(["--extractor-args", YOUTUBE_PREMIUM_EXTRACTOR_ARGS])
 
     opus_note = " + Simpan File Asli Opus (.webm)" if keep_opus else ""
     if norm_format == "opus":
@@ -765,8 +808,14 @@ def download(args) -> int:
         cookies_file = Path("library/cookies.txt").resolve()
 
     browser = getattr(args, "cookies_from_browser", None)
+    premium_active = False
     if cookies_file.is_file():
         print(f"Menggunakan file sesi YouTube: {cookies_file}", flush=True)
+        tier_info = check_youtube_cookies_tier(cookies_file)
+        print(f"[COOKIES TIER] {tier_info['label']} — {tier_info['note']}", flush=True)
+        premium_active = tier_info.get("status") in ("premium", "inconclusive")
+    elif browser:
+        premium_active = True
 
     cmd, target_desc = build_ytdlp_command(
         url=args.url,
@@ -778,13 +827,14 @@ def download(args) -> int:
         cookies_file=cookies_file if cookies_file.is_file() else None,
         cookie_browser=browser,
         js_runtime=js_runtime,
+        premium_active=premium_active,
     )
     print(target_desc, flush=True)
 
     before_files = set(p for p in folder.rglob("*") if p.is_file())
     returncode = _run_ytdlp_with_tier_log(cmd, env=run_env)
-    if returncode != 0 and browser:
-        print("[AUTH FALLBACK] Percobaan dengan cookies browser gagal. Mencoba ulang mode publik...", flush=True)
+    if returncode != 0 and (browser or cookies_file.is_file()):
+        print("[AUTH FALLBACK] Percobaan dengan cookies gagal. Mencoba ulang mode publik...", flush=True)
         fallback_cmd, _ = build_ytdlp_command(
             url=args.url,
             output_template=template,
@@ -795,6 +845,7 @@ def download(args) -> int:
             cookies_file=None,
             cookie_browser=None,
             js_runtime=js_runtime,
+            premium_active=False,
         )
         returncode = _run_ytdlp_with_tier_log(fallback_cmd, env=run_env)
 
@@ -823,23 +874,274 @@ def download(args) -> int:
     return 0
 
 
-def _load_cookie_header(cookies_file: Path | None) -> str:
-    """Reads Netscape cookie file and formats into HTTP Cookie header string."""
+def _parse_netscape_cookies_for_url(cookies_file: Path | None, target_url: str) -> str:
+    """Returns domain-, path-, scheme-, and expiry-matched HTTP Cookie header for target_url."""
     if not cookies_file or not Path(cookies_file).is_file():
         return ""
-    cookies = []
+    parsed = urllib.parse.urlparse(target_url)
+    host = (parsed.hostname or "").lower()
+    req_path = parsed.path or "/"
+    is_https = parsed.scheme.lower() == "https"
+    if not host:
+        return ""
+
+    now_s = int(time.time())
+    pairs: list[str] = []
     try:
         with open(cookies_file, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("#HttpOnly_"):
+                    line = line[len("#HttpOnly_"):]
+                elif line.startswith("#"):
                     continue
                 parts = line.split("\t")
-                if len(parts) >= 7:
-                    cookies.append(f"{parts[5]}={parts[6]}")
+                if len(parts) < 7:
+                    continue
+                domain_raw, _include_sub, path_val, secure_flag, exp_str, name, value = parts[:7]
+                cookie_domain = domain_raw.strip().lower()
+                cookie_path = path_val.strip() or "/"
+                is_secure = secure_flag.strip().upper() == "TRUE"
+                name = name.strip()
+                if not cookie_domain or not name:
+                    continue
+                if is_secure and not is_https:
+                    continue
+                try:
+                    exp_ts = int(exp_str.strip() or "0")
+                except ValueError:
+                    exp_ts = 0
+                if exp_ts > 0 and exp_ts < now_s:
+                    continue
+                if name.startswith("__Host-"):
+                    if not (is_https and is_secure and cookie_path == "/" and host == cookie_domain.lstrip(".")):
+                        continue
+                elif cookie_domain.startswith("."):
+                    base_domain = cookie_domain[1:]
+                    if host != base_domain and not host.endswith(cookie_domain):
+                        continue
+                elif host != cookie_domain:
+                    continue
+                if not req_path.startswith(cookie_path):
+                    continue
+                pairs.append(f"{name}={value}")
     except Exception:
-        pass
-    return "; ".join(cookies)
+        return ""
+    return "; ".join(pairs)
+
+
+def _load_cookie_header(cookies_file: Path | None, target_url: str = "https://music.youtube.com/") -> str:
+    """Reads Netscape cookie file and formats into domain-matched HTTP Cookie header string."""
+    return _parse_netscape_cookies_for_url(cookies_file, target_url)
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Prevents urllib from following redirects automatically and leaking Cookie headers off-origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_url_no_redirect(req: urllib.request.Request, timeout: float = 6.0):
+    """Uses a non-redirecting opener unless urlopen is patched by tests."""
+    if getattr(urllib.request.urlopen, "__module__", "") != "urllib.request":
+        return urllib.request.urlopen(req, timeout=timeout)
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    return opener.open(req, timeout=timeout)
+
+
+def _fetch_youtube_html_with_cookies(start_url: str, cookies_file: Path, max_hops: int = 3) -> tuple[int | None, str, bool]:
+    """Fetches bounded HTML (<=4MB) over HTTPS on *.youtube.com without leaking cookies off-origin."""
+    current_url = start_url
+    for _ in range(max_hops + 1):
+        parsed = urllib.parse.urlparse(current_url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme.lower() != "https" or not (host == "youtube.com" or host.endswith(".youtube.com")):
+            return None, "", "accounts.google." in host or "servicelogin" in current_url.lower()
+        cookie_hdr = _parse_netscape_cookies_for_url(cookies_file, current_url)
+        headers = {
+            "User-Agent": _DESKTOP_CHROME_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+        }
+        if cookie_hdr:
+            headers["Cookie"] = cookie_hdr
+        req = urllib.request.Request(current_url, headers=headers)
+        try:
+            with _open_url_no_redirect(req, timeout=6.0) as resp:
+                final_url = ""
+                try:
+                    raw_final = resp.geturl()
+                    if isinstance(raw_final, str):
+                        final_url = raw_final
+                except Exception:
+                    final_url = ""
+                final_low = final_url.lower()
+                if final_low and ("accounts.google." in final_low or "servicelogin" in final_low):
+                    return 302, "", True
+                status = getattr(resp, "status", None)
+                if not isinstance(status, int):
+                    status = 200
+                body = resp.read(4_000_001)[:4_000_000]
+                return status, body.decode("utf-8", errors="ignore"), False
+        except urllib.error.HTTPError as err:
+            if err.code in (301, 302, 303, 307, 308):
+                loc = err.headers.get("Location") if err.headers else None
+                if not loc:
+                    return err.code, "", False
+                next_url = urllib.parse.urljoin(current_url, loc)
+                next_parsed = urllib.parse.urlparse(next_url)
+                next_host = (next_parsed.hostname or "").lower()
+                if "accounts.google." in next_host or "servicelogin" in next_url.lower():
+                    return err.code, "", True
+                if next_parsed.scheme.lower() != "https" or not (next_host == "youtube.com" or next_host.endswith(".youtube.com")):
+                    return err.code, "", False
+                current_url = next_url
+                continue
+            return err.code, "", False
+        except Exception:
+            return None, "", False
+    return None, "", False
+
+
+def _cookie_cache_key(cookies_file: Path) -> tuple[str, int, int] | None:
+    try:
+        resolved = str(cookies_file.resolve())
+        st = cookies_file.stat()
+        return (resolved, int(st.st_mtime_ns), int(st.st_size))
+    except OSError:
+        return None
+
+
+def get_cached_youtube_cookies_tier(cookies_file: Path | None) -> dict | None:
+    """Returns a fresh cached tier verdict for cookies_file without performing network I/O."""
+    if not cookies_file or not Path(cookies_file).is_file():
+        return None
+    key = _cookie_cache_key(Path(cookies_file))
+    if not key:
+        return None
+    now = time.time()
+    with _COOKIES_TIER_CACHE_LOCK:
+        cached = _COOKIES_TIER_CACHE.get(key)
+        if cached and (now - cached[0]) < _COOKIES_TIER_TTL_S:
+            return dict(cached[1])
+    return None
+
+
+def check_youtube_cookies_tier(cookies_file: Path | None, force_refresh: bool = False) -> dict:
+    """Safely verifies whether cookies.txt carries an active YouTube / YT Music Premium session."""
+    if not cookies_file or not Path(cookies_file).is_file():
+        return {
+            "present": False,
+            "status": "missing",
+            "tier": "unknown",
+            "label": "Browser / Tidak Ada File",
+            "note": "File library/cookies.txt tidak ditemukan.",
+            "www_code": None,
+            "music_code": None,
+            "checked_at": int(time.time()),
+        }
+
+    cookies_path = Path(cookies_file)
+    cache_key = _cookie_cache_key(cookies_path)
+    if not force_refresh and cache_key:
+        cached = get_cached_youtube_cookies_tier(cookies_path)
+        if cached is not None:
+            return cached
+
+    yt_cookie_hdr = _parse_netscape_cookies_for_url(cookies_path, "https://music.youtube.com/")
+    if not yt_cookie_hdr:
+        res = {
+            "present": True,
+            "status": "unauthenticated",
+            "tier": "free",
+            "label": "Cookies Kosong / Kadaluarsa",
+            "note": "Tidak ada cookie aktif untuk *.youtube.com di library/cookies.txt.",
+            "www_code": None,
+            "music_code": None,
+            "checked_at": int(time.time()),
+        }
+        if cache_key:
+            with _COOKIES_TIER_CACHE_LOCK:
+                _COOKIES_TIER_CACHE[cache_key] = (time.time(), dict(res))
+        return res
+
+    www_code, www_html, www_redir = _fetch_youtube_html_with_cookies("https://www.youtube.com/", cookies_path)
+    music_code, music_html, music_redir = _fetch_youtube_html_with_cookies("https://music.youtube.com/", cookies_path)
+
+    def _logged_flag(html: str, redir: bool) -> bool | None:
+        if redir or re.search(r'"LOGGED_IN"\s*:\s*false', html):
+            return False
+        if re.search(r'"LOGGED_IN"\s*:\s*true', html):
+            return True
+        return None
+
+    www_logged = _logged_flag(www_html, www_redir)
+    music_logged = _logged_flag(music_html, music_redir)
+    music_is_sub = bool(re.search(r'"IS_SUBSCRIBER"\s*:\s*true', music_html))
+    music_not_sub = bool(re.search(r'"IS_SUBSCRIBER"\s*:\s*false', music_html))
+    has_yt_premium_logo = "YOUTUBE_PREMIUM_LOGO" in www_html
+    has_music_premium_logo = "MUSIC_PREMIUM_LOGO" in music_html or "MUSIC_PREMIUM_LOGO" in www_html
+    has_premium_tooltip = bool(
+        re.search(r'"topbarLogoRenderer"\s*:\s*\{[^{}]{0,400}"tooltip"\s*:\s*"[^"]*Premium', www_html)
+    )
+    has_www_std_logo = "YOUTUBE_LOGO" in www_html and not (has_yt_premium_logo or has_premium_tooltip)
+
+    www_premium = (has_yt_premium_logo or has_premium_tooltip) and www_logged is not False
+    music_premium = (music_is_sub or has_music_premium_logo) and music_logged is not False
+
+    if www_premium or music_premium:
+        label = "YouTube Premium" if (has_yt_premium_logo or has_premium_tooltip) else "YT Music Premium"
+        res = {
+            "present": True,
+            "status": "premium",
+            "tier": "premium",
+            "label": label,
+            "note": "Sesi aktif • stream 256 kbps (Opus 774 / AAC 141) siap dipakai.",
+            "www_code": www_code,
+            "music_code": music_code,
+            "checked_at": int(time.time()),
+        }
+    elif (www_logged is False or music_logged is False) and www_logged is not True and music_logged is not True:
+        res = {
+            "present": True,
+            "status": "unauthenticated",
+            "tier": "free",
+            "label": "Cookies Kadaluarsa / Belum Login",
+            "note": "Sesi di library/cookies.txt sudah kadaluarsa. Ekspor ulang cookies dari browser yang login.",
+            "www_code": www_code,
+            "music_code": music_code,
+            "checked_at": int(time.time()),
+        }
+    elif (music_logged is True and music_not_sub) or (www_logged is True and has_www_std_logo):
+        res = {
+            "present": True,
+            "status": "free",
+            "tier": "free",
+            "label": "Akun Standar (Gratis)",
+            "note": "Cookies login valid, namun tidak ada langganan Premium aktif (maks ~160 kbps Opus 251).",
+            "www_code": www_code,
+            "music_code": music_code,
+            "checked_at": int(time.time()),
+        }
+    else:
+        res = {
+            "present": True,
+            "status": "inconclusive",
+            "tier": "unknown",
+            "label": "Belum Terverifikasi",
+            "note": "Status Premium di library/cookies.txt belum bisa dipastikan dari respons YouTube.",
+            "www_code": www_code,
+            "music_code": music_code,
+            "checked_at": int(time.time()),
+        }
+
+    if cache_key:
+        with _COOKIES_TIER_CACHE_LOCK:
+            _COOKIES_TIER_CACHE[cache_key] = (time.time(), dict(res))
+    return res
 
 
 def _parse_music_responsive_item(renderer: dict) -> dict | None:
@@ -1616,6 +1918,12 @@ def get_preview_stream_info(url: str, cookies_file: Path | None = None) -> tuple
             return s_url, s_headers
 
     # Try in-process yt_dlp first
+    cookies_path = Path(cookies_file) if cookies_file and Path(cookies_file).is_file() else None
+    use_premium_preview = False
+    if cookies_path:
+        tier_info = get_cached_youtube_cookies_tier(cookies_path)
+        use_premium_preview = bool(tier_info and tier_info.get("tier") == "premium")
+
     try:
         import yt_dlp
         ydl_opts = {
@@ -1626,8 +1934,15 @@ def get_preview_stream_info(url: str, cookies_file: Path | None = None) -> tuple
             "socket_timeout": 10,
             "noplaylist": True,
         }
-        if cookies_file and Path(cookies_file).is_file():
-            ydl_opts["cookiefile"] = str(cookies_file)
+        if cookies_path:
+            ydl_opts["cookiefile"] = str(cookies_path)
+        if use_premium_preview:
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["web_music", "web_creator", "tv_samsung", "web"],
+                    "formats": ["missing_pot"],
+                }
+            }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(clean_url, download=False)
@@ -1650,9 +1965,11 @@ def get_preview_stream_info(url: str, cookies_file: Path | None = None) -> tuple
                     def _rank_audio(f):
                         fid = str(f.get("format_id") or "")
                         score = 0
-                        if fid in ("251", "774"):
+                        if fid == "774":
+                            score += 1200
+                        elif fid in ("251", "141"):
                             score += 1000
-                        elif fid in ("140", "141"):
+                        elif fid == "140":
                             score += 500
                         elif f.get("vcodec") == "none":
                             score += 200
@@ -1684,8 +2001,10 @@ def get_preview_stream_info(url: str, cookies_file: Path | None = None) -> tuple
         js_spec, _ = find_js_runtime()
         if js_spec:
             cmd.extend(["--js-runtimes", js_spec])
-        if cookies_file and Path(cookies_file).is_file():
-            cmd.extend(["--cookies", str(cookies_file)])
+        if cookies_path:
+            cmd.extend(["--cookies", str(cookies_path)])
+        if use_premium_preview:
+            cmd.extend(["--extractor-args", YOUTUBE_PREMIUM_EXTRACTOR_ARGS])
         cmd.append(clean_url)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         if proc.returncode == 0:

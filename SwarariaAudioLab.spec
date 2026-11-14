@@ -19,6 +19,7 @@ hiddenimports = [
     "secure_remote",
     "secure_remote_tls",
     "audio_manager",
+    "youtube_login",
     "task_engine",
     "fs_browser",
     "splitter_engine",

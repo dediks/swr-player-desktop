@@ -854,6 +854,23 @@ class TaskQueueManager:
         last_error_line = ""
 
         for try_idx, with_cookies in enumerate(attempts):
+            cookies_path_for_try = self.cookies_file if (with_cookies and self.cookies_file.is_file()) else None
+            browser_for_try = cookie_browser if (with_cookies and not cookies_path_for_try) else None
+            premium_for_try: bool = False
+
+            if cookies_path_for_try is not None:
+                tier_info = audio_manager.check_youtube_cookies_tier(cookies_path_for_try)
+                self.append_log(task, f"[COOKIES TIER] {tier_info['label']} — {tier_info['note']}")
+                if tier_info.get("status") == "unauthenticated" and len(attempts) > try_idx + 1:
+                    self.append_log(
+                        task,
+                        "[AUTH FALLBACK] Sesi library/cookies.txt kadaluarsa / belum login. Melewati sesi rusak dan beralih ke Mode Publik (~160 kbps)...",
+                    )
+                    continue
+                premium_for_try = tier_info.get("status") in ("premium", "inconclusive")
+            elif browser_for_try:
+                premium_for_try = True
+
             cmd, target_desc = audio_manager.build_ytdlp_command(
                 url=url,
                 output_template=template,
@@ -861,9 +878,10 @@ class TaskQueueManager:
                 audio_format=audio_format,
                 keep_opus=keep_opus,
                 is_playlist=is_playlist,
-                cookies_file=self.cookies_file if (with_cookies and self.cookies_file.is_file()) else None,
-                cookie_browser=cookie_browser if (with_cookies and not self.cookies_file.is_file()) else None,
+                cookies_file=cookies_path_for_try,
+                cookie_browser=browser_for_try,
                 js_runtime=js_runtime,
+                premium_active=premium_for_try,
             )
             if try_idx > 0:
                 auth_source = "library/cookies.txt" if self.cookies_file.is_file() else f"browser ({cookie_browser})"
@@ -908,6 +926,20 @@ class TaskQueueManager:
             key=lambda x: x.name,
         )
         clipping_count = 0
+
+        if new_files and shutil.which("ffprobe"):
+            self.metadata_cache.probe_files_fast(new_files, include_spectral=False)
+            for nf in new_files:
+                try:
+                    info = audio_manager.metadata(nf)
+                    sr = f"{info['sample_rate_hz']} Hz" if info.get("sample_rate_hz") else "?"
+                    br = f"{info['bitrate_kbps']} kbps" if info.get("bitrate_kbps") else "VBR"
+                    self.append_log(
+                        task,
+                        f"[STREAM VERIFIED] {nf.name} | Codec: {info['codec']} | Sample Rate: {sr} | Bitrate: {br}",
+                    )
+                except Exception:
+                    pass
 
         if new_files and auto_scan and shutil.which("ffmpeg") and shutil.which("ffprobe"):
             self.append_log(task, "Initiating audio QC audit (EBU R128 & True Peak)...")
