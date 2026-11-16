@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../swararia-audio-player-android"
+		},
+		{
+			"path": "../../../swr-player-landing"
 		}
 	],
 	"settings": {}
