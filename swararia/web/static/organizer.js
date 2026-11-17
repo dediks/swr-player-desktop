@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Instant client-side preview matching fs_browser.py clean_and_number_filename
+   * Instant client-side preview matching fs_browser/batch_rename.py clean_and_number_filename
    */
   function simulateCleanName(filename, trackIdx, opts) {
     const dotIdx = filename.lastIndexOf('.');
@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
       stem = stem.replace(/\s*\[[A-Za-z0-9_-]{11}\]$/g, '');
     }
     if (opts.strip_junk_tags) {
-      // Mirrors fs_browser.py: bracketed tags (any junk word), then strong trailing "- Official Video" style tags.
+      // Mirrors fs_browser/batch_rename.py: bracketed tags (any junk word), then strong trailing "- Official Video" style tags.
       const junkAll = '(?:official\\s*(?:music\\s*)?(?:video|audio|lyric\\s*video|lyrics|visualizer|mv)|music\\s*video|lyric\\s*video|lyrics?|lirik(?:\\s*lagu)?|video\\s*klip|visualizer|audio\\s*only|full\\s*album|karaoke(?:\\s*version)?|hd|hq|4k(?:\\s*uhd)?|1080p|720p|mv|ost)';
       const junkStrong = '(?:official\\s*(?:music\\s*)?(?:video|audio|lyric\\s*video|lyrics|visualizer|mv)|music\\s*video|lyric\\s*video|lyrics?|lirik(?:\\s*lagu)?|video\\s*klip|visualizer|audio\\s*only|full\\s*album)';
       stem = stem.replace(new RegExp(`[\\(\\[\\{]\\s*${junkAll}\\s*[\\)\\]\\}]`, 'gi'), ' ');

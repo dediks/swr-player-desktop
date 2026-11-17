@@ -171,7 +171,7 @@ def test_parse_music_responsive_item_playlist_track_count():
     assert item["type"] == "playlist"
 
 
-@patch("swararia.core.audio_manager.urllib.request.urlopen")
+@patch("urllib.request.urlopen")
 def test_search_youtube_music_innertube_mock(mock_urlopen):
     sample_response = {
         "contents": {
@@ -242,8 +242,8 @@ def test_search_youtube_music_innertube_mock(mock_urlopen):
     assert results[1]["title"] == "Song 2"
 
 
-@patch("swararia.core.audio_manager.urllib.request.urlopen")
-@patch("swararia.core.audio_manager.subprocess.run")
+@patch("urllib.request.urlopen")
+@patch("subprocess.run")
 def test_search_youtube_music_fallback_to_ytdlp(mock_subproc, mock_urlopen):
     # Simulate Innertube failure (e.g. HTTP 500 or network error)
     mock_urlopen.side_effect = Exception("Network blocked or changed")
@@ -593,7 +593,7 @@ def test_inspect_playlist_ytdlp_fallback():
         ]
     }
 
-    with patch("swararia.core.audio_manager._inspect_playlist_innertube", return_value=None):
+    with patch("swararia.core.audio_manager.yt_playlist._inspect_playlist_innertube", return_value=None):
         with patch("yt_dlp.YoutubeDL") as mock_ydl_cls:
             instance = mock_ydl_cls.return_value.__enter__.return_value
             instance.extract_info.return_value = fake_info

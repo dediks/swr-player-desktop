@@ -9,6 +9,9 @@ from unittest import mock
 from swararia.core import fs_browser as fb  # noqa: E402
 
 
+from swararia.core.fs_browser import rename_history as fb_rename_history, safe_paths as fb_safe_paths
+
+
 def test_clean_basic_numbering():
     assert fb.clean_and_number_filename("Song [dQw4w9WgXcQ].mp3", index=1) == "01 - Song.mp3"
 
@@ -31,11 +34,11 @@ def _setup(tmp_path, names):
     for n in names:
         (tmp_path / n).write_bytes(b"x")
     stack = contextlib.ExitStack()
-    stack.enter_context(mock.patch.object(fb, "get_allowed_roots", return_value=[tmp_path.resolve()]))
+    stack.enter_context(mock.patch.object(fb_safe_paths, "get_allowed_roots", return_value=[tmp_path.resolve()]))
     # Never touch the real library/rename_history.json from tests
     hist_dir = tempfile.mkdtemp(prefix="rename_hist_")
     stack.callback(shutil.rmtree, hist_dir, True)
-    stack.enter_context(mock.patch.object(fb, "RENAME_HISTORY_FILE", Path(hist_dir) / "rename_history.json"))
+    stack.enter_context(mock.patch.object(fb_rename_history, "RENAME_HISTORY_FILE", Path(hist_dir) / "rename_history.json"))
     return stack
 
 

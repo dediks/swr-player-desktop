@@ -10,6 +10,11 @@ from swararia.core import audio_manager as am  # noqa: E402
 from swararia.server import handler as srv_handler, state as srv_state
 
 
+import shutil
+import subprocess
+from swararia.core.audio_manager import toolchain as am_toolchain, yt_cookies as am_yt_cookies, ytdlp_engine as am_ytdlp_engine
+
+
 def test_youtube_audio_selector_strictly_anti_drc():
     # Every tier in the selector must strictly guard against -drc streams
     tiers = am.YOUTUBE_AUDIO_SELECTOR.split("/")
@@ -71,10 +76,10 @@ def test_build_ytdlp_command_performance_and_quality_flags(tmp_path):
 
 def test_thumbnail_guarded_by_mutagen(tmp_path):
     archive = tmp_path / "downloaded_ids.txt"
-    with mock.patch.object(am, "is_mutagen_available", return_value=False):
+    with mock.patch.object(am_toolchain, "is_mutagen_available", return_value=False):
         cmd, _ = am.build_ytdlp_command("https://youtube.com/watch?v=xyz", "out", archive, "opus")
         assert "--embed-thumbnail" not in cmd
-    with mock.patch.object(am, "is_mutagen_available", return_value=True):
+    with mock.patch.object(am_toolchain, "is_mutagen_available", return_value=True):
         cmd, _ = am.build_ytdlp_command("https://youtube.com/watch?v=xyz", "out", archive, "opus")
         assert "--embed-thumbnail" in cmd
 
@@ -132,7 +137,7 @@ def test_youtube_cookies_tier_detection_variants(tmp_path):
             return (200, '{"LOGGED_IN":true,"IS_SUBSCRIBER":true}', False)
         return (200, '{"LOGGED_IN":true,"icon":"YOUTUBE_LOGO"}', False)
 
-    with mock.patch.object(am, "_fetch_youtube_html_with_cookies", side_effect=_mock_ytm_premium):
+    with mock.patch.object(am_yt_cookies, "_fetch_youtube_html_with_cookies", side_effect=_mock_ytm_premium):
         res = am.check_youtube_cookies_tier(cookies_file, force_refresh=True)
         assert res["status"] == "premium"
         assert res["tier"] == "premium"
@@ -145,7 +150,7 @@ def test_youtube_cookies_tier_detection_variants(tmp_path):
             return (200, '{"LOGGED_IN":true,"IS_SUBSCRIBER":false}', False)
         return (200, '{"LOGGED_IN":true,"icon":"YOUTUBE_LOGO"}', False)
 
-    with mock.patch.object(am, "_fetch_youtube_html_with_cookies", side_effect=_mock_free):
+    with mock.patch.object(am_yt_cookies, "_fetch_youtube_html_with_cookies", side_effect=_mock_free):
         res = am.check_youtube_cookies_tier(cookies_file, force_refresh=True)
         assert res["status"] == "free"
         assert res["tier"] == "free"
@@ -154,7 +159,7 @@ def test_youtube_cookies_tier_detection_variants(tmp_path):
     def _mock_expired(start_url, _path, max_hops=3):
         return (200, '{"LOGGED_IN":false,"IS_SUBSCRIBER":false}', False)
 
-    with mock.patch.object(am, "_fetch_youtube_html_with_cookies", side_effect=_mock_expired):
+    with mock.patch.object(am_yt_cookies, "_fetch_youtube_html_with_cookies", side_effect=_mock_expired):
         res = am.check_youtube_cookies_tier(cookies_file, force_refresh=True)
         assert res["status"] == "unauthenticated"
         assert res["tier"] == "free"
@@ -200,7 +205,7 @@ def test_metadata_derives_bitrate_when_ffprobe_omits_it(tmp_path):
         "streams": [{"codec_type": "audio", "codec_name": "opus", "sample_rate": "48000", "channels": 2, "duration": "100.0"}],
         "format": {"duration": "100.0"},
     })
-    with mock.patch.object(am.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=ffprobe_json)):
+    with mock.patch.object(subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=ffprobe_json)):
         info = am.metadata(sample)
         assert info["codec"] == "opus"
         assert info["bitrate_kbps"] == 256.0
@@ -231,7 +236,7 @@ def test_web_ui_cookies_endpoint_and_system_status(tmp_path):
         return (200, '{"LOGGED_IN":true,"IS_SUBSCRIBER":true}', False)
 
     with mock.patch.object(srv_state, "COOKIES_FILE", fake_cookies), \
-            mock.patch.object(am, "_fetch_youtube_html_with_cookies", side_effect=_mock_prem):
+            mock.patch.object(am_yt_cookies, "_fetch_youtube_html_with_cookies", side_effect=_mock_prem):
         handler._handle_post_cookies({"action": "save", "content": payload_content})
         assert len(sent) == 1
         code, body = sent[0]
@@ -276,7 +281,7 @@ def test_youtube_cookie_fetch_does_not_leak_to_non_youtube_redirects(tmp_path):
             io.BytesIO(b""),
         )
 
-    with mock.patch.object(am, "_open_url_no_redirect", side_effect=_fake_open):
+    with mock.patch.object(am_yt_cookies, "_open_url_no_redirect", side_effect=_fake_open):
         status, html, login_redir = am._fetch_youtube_html_with_cookies("https://music.youtube.com/", cookies_file)
         assert status == 302
         assert html == ""
@@ -547,7 +552,7 @@ def test_engine_recovery_classification_and_fallback_extractor_args(tmp_path):
             return SimpleNamespace(returncode=1)
         return SimpleNamespace(returncode=0)
 
-    with mock.patch.object(am.subprocess, "run", side_effect=_fake_run):
+    with mock.patch.object(subprocess, "run", side_effect=_fake_run):
         assert am.update_ytdlp_preferring_nightly() is True
     assert len(seen_cmds) == 2
     assert "nightly" in seen_cmds[0] and "stable" in seen_cmds[1]
@@ -592,12 +597,12 @@ def test_download_triggers_auto_heal_and_fallback_clients_on_recoverable_failure
     orig_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        with mock.patch.object(am, "require"), \
-                mock.patch.object(am, "sync_download_archive", return_value=0), \
-                mock.patch.object(am, "run_ytdlp_process", side_effect=_fake_process), \
-                mock.patch.object(am, "try_claim_ytdlp_auto_heal_slot", return_value=True) as mock_claim, \
-                mock.patch.object(am, "update_ytdlp_preferring_nightly", return_value=True) as mock_update, \
-                mock.patch.object(am.shutil, "which", return_value=None):
+        with mock.patch.object(am_toolchain, "require"), \
+                mock.patch.object(am_ytdlp_engine, "sync_download_archive", return_value=0), \
+                mock.patch.object(am_ytdlp_engine, "run_ytdlp_process", side_effect=_fake_process), \
+                mock.patch.object(am_ytdlp_engine, "try_claim_ytdlp_auto_heal_slot", return_value=True) as mock_claim, \
+                mock.patch.object(am_ytdlp_engine, "update_ytdlp_preferring_nightly", return_value=True) as mock_update, \
+                mock.patch.object(shutil, "which", return_value=None):
             rc = am.download(args)
     finally:
         os.chdir(orig_cwd)
