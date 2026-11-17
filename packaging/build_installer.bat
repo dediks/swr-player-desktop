@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 title SWARARIA AUDIO LAB — Windows Wizard Installer Builder
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 echo ==================================================================
 echo   SWARARIA AUDIO LAB - Windows Wizard Installer Builder
@@ -62,7 +62,7 @@ if "!ISCC_PATH!"=="" (
 :: 3. Jalankan build_desktop.py dengan flag --install-deps dan --installer
 echo.
 echo Menjalankan proses build aplikasi desktop dan installer wizard...
-%PY_CMD% build_desktop.py --install-deps --installer
+%PY_CMD% packaging\build_desktop.py --install-deps --installer
 
 if %ERRORLEVEL% neq 0 (
     echo.
@@ -78,7 +78,7 @@ if exist "dist\SwarariaAudioLab_Setup.exe" (
     echo   dist\SwarariaAudioLab_Setup.exe
     echo.
     echo Membuka folder dist di Windows Explorer...
-    explorer /select,"%~dp0dist\SwarariaAudioLab_Setup.exe"
+    explorer /select,"%~dp0..\dist\SwarariaAudioLab_Setup.exe"
 )
 
 echo.

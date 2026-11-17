@@ -18,7 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+PACKAGING_DIR = Path(__file__).resolve().parent
+BASE_DIR = PACKAGING_DIR.parent  # repository root
 VENDOR_BIN_DIR = BASE_DIR / ".vendor" / "bin"
 DIST_DIR = BASE_DIR / "dist" / "SwarariaAudioLab"
 
@@ -94,7 +95,7 @@ def find_inno_setup_compiler() -> Path | None:
 
 def compile_inno_setup_installer() -> bool:
     """Mengompilasi installer.iss menjadi SwarariaAudioLab_Setup.exe menggunakan Inno Setup."""
-    iss_file = BASE_DIR / "installer.iss"
+    iss_file = PACKAGING_DIR / "installer.iss"
     if not iss_file.is_file():
         print(f"[ERROR] File konfigurasi installer '{iss_file}' tidak ditemukan.")
         return False
@@ -164,7 +165,7 @@ def main() -> int:
         return 1
 
     print("\n[3/4] Menjalankan PyInstaller (SwarariaAudioLab.spec)...")
-    spec_file = BASE_DIR / "SwarariaAudioLab.spec"
+    spec_file = PACKAGING_DIR / "SwarariaAudioLab.spec"
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", str(spec_file)]
     res = subprocess.run(cmd, cwd=str(BASE_DIR))
     if res.returncode != 0:

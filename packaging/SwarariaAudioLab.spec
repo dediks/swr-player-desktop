@@ -6,7 +6,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
-project_dir = Path(SPECPATH).resolve()
+project_dir = Path(SPECPATH).resolve().parent  # spec lives in packaging/
 
 # 1. Collect static web UI assets
 datas = [

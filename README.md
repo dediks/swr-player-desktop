@@ -1,6 +1,6 @@
 # SWARARIA AUDIO LAB — Pro Audio Library, FOH QC & DSP Workstation
 
-> **Browser + Android Remote (koreksi aditif):** HP browser remote HTTP/PIN dipertahankan seperti baseline lama melalui menu **HP Remote**. Menu **Android Remote** terpisah menambahkan HTTPS v1, fingerprint, invite dan approval untuk Android0.5; default OFF/manual ON. Tidak perlu memasang sertifikat di HP dan tidak ada perubahan APK. **HTTPS Android tidak melindungi jalur browser HTTP/PIN lama:** gunakan hanya LAN tepercaya, jangan expose internet atau menjalankan launcher default di VPS publik. Rencana/batas verifikasi: [DUAL-REMOTE-PLAN.md](DUAL-REMOTE-PLAN.md); kontrak native: [SECURE_REMOTE.md](SECURE_REMOTE.md). Windows/WSL/HP nyata tetap perlu diuji.
+> **Browser + Android Remote (koreksi aditif):** HP browser remote HTTP/PIN dipertahankan seperti baseline lama melalui menu **HP Remote**. Menu **Android Remote** terpisah menambahkan HTTPS v1, fingerprint, invite dan approval untuk Android0.5; default OFF/manual ON. Tidak perlu memasang sertifikat di HP dan tidak ada perubahan APK. **HTTPS Android tidak melindungi jalur browser HTTP/PIN lama:** gunakan hanya LAN tepercaya, jangan expose internet atau menjalankan launcher default di VPS publik. Rencana/batas verifikasi: [DUAL-REMOTE-PLAN.md](docs/DUAL-REMOTE-PLAN.md); kontrak native: [SECURE_REMOTE.md](docs/SECURE_REMOTE.md). Windows/WSL/HP nyata tetap perlu diuji.
 
 Workstation lokal berbasis web & CLI untuk **Audio Engineer**, **Operator FOH / Soundsystem**, **DJ**, dan **Event Organizer**. Dirancang dengan estetika **shadcn/ui Dark High-Contrast** dan arsitektur **4 Halaman Dedicated** yang terhubung melalui _Shared Workspace State_.
 
@@ -60,7 +60,7 @@ Jika Anda ingin membagikan aplikasi ini ke **orang awam** agar mereka **tidak pe
 
 ### Cara 1-Klik di Windows:
 
-Cukup **klik 2x file `build_installer.bat`**. Skrip ini akan otomatis:
+Cukup **klik 2x file `packaging/build_installer.bat`**. Skrip ini akan otomatis:
 
 1. Memeriksa PyInstaller & dependensi build.
 2. Memeriksa Inno Setup 6 (menawarkan auto-install via winget jika belum ada).
@@ -74,7 +74,7 @@ Cukup **klik 2x file `build_installer.bat`**. Skrip ini akan otomatis:
 winget install JRSoftware.InnoSetup
 
 # 2. Build aplikasi desktop + kompilasi Setup Wizard sekaligus:
-python build_desktop.py --install-deps --installer
+python packaging/build_desktop.py --install-deps --installer
 ```
 
 Hasilnya adalah file **`dist\SwarariaAudioLab_Setup.exe`**.
@@ -152,4 +152,4 @@ python3 audio_manager.py download "URL_PLAYLIST_BERIZIN" --authorized --playlist
 
 ## 📖 Dokumentasi Teknis Lengkap
 
-Lihat [**`DOCUMENTATION.md`**](./DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.
+Lihat [**`DOCUMENTATION.md`**](./docs/DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.

@@ -25,7 +25,7 @@ DisableProgramGroupPage=yes
 ; Non-admin install mode (seperti VS Code / Spotify) agar ramah pengguna awam & mudah menulis ke folder library
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir=dist
+OutputDir=..\dist
 OutputBaseFilename=SwarariaAudioLab_Setup
 Compression=lzma2/fast
 SolidCompression=yes
@@ -39,8 +39,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\SwarariaAudioLab\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\SwarariaAudioLab\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "{#MyAppExeName}"
+Source: "..\dist\SwarariaAudioLab\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\SwarariaAudioLab\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "{#MyAppExeName}"
 
 [Dirs]
 Name: "{app}\library\inbox"; Permissions: users-modify

@@ -175,7 +175,7 @@ Agar pengguna akhir (Sound Engineer, DJ, Event Organizer) dapat menginstal aplik
 > PyInstaller **tidak mendukung cross-compilation** (PyInstaller di Linux menghasilkan binary Linux ELF, bukan file `.exe` Windows). Jika kode berada di dalam WSL, buka folder WSL dari Windows PowerShell menggunakan path `\\wsl.localhost\Ubuntu\home\dedik\project\audio-library-starter` lalu jalankan proses build menggunakan **Python Windows**.
 
 #### 2. Cara 1-Klik di Windows (Rekomendasi):
-Cukup klik ganda file **`build_installer.bat`**. Script ini akan secara otomatis:
+Cukup klik ganda file **`packaging/build_installer.bat`**. Script ini akan secara otomatis:
 - Memeriksa instalasi Python dan Inno Setup.
 - Mengunduh dependensi build (`pyinstaller` & `pywebview`).
 - Mengemas seluruh aplikasi ke `dist/SwarariaAudioLab/`.
@@ -185,10 +185,10 @@ Cukup klik ganda file **`build_installer.bat`**. Script ini akan secara otomatis
 #### 3. Cara Command Line:
 ```bash
 # Build desktop app + kompilasi Setup Wizard otomatis:
-python build_desktop.py --install-deps --installer
+python packaging/build_desktop.py --install-deps --installer
 
 # Opsi pembersihan cache sebelum build (rekomendasi pasca update kode):
-python build_desktop.py --clean --installer
+python packaging/build_desktop.py --clean --installer
 ```
 
 #### 4. Opsi Distribusi:
@@ -353,9 +353,9 @@ Setiap kali ada perbaikan bug atau penambahan fitur:
    - `installer.iss`: Ubah `#define MyAppVersion "1.0.1"`
 2. **Rebuild Installer Windows**:
    ```cmd
-   python build_desktop.py --clean --installer
+   python packaging/build_desktop.py --clean --installer
    ```
-   *(Atau jalankan `build_installer.bat`)*.
+   *(Atau jalankan `packaging/build_installer.bat`)*.
 3. **Terbitkan Rilis di GitHub**:
    - Buka `https://github.com/dediks/audio-library/releases/new`.
    - Masukkan Tag (contoh: `v1.0.1`), judul rilis, dan ringkasan pembaruan.
@@ -394,4 +394,4 @@ Setiap kali ada perbaikan bug atau penambahan fitur:
 
 #### Q: Saya mengembangkan kode di dalam WSL (Ubuntu), bagaimana cara mem-build file `.exe` Windows?
 
-**J:** Buka terminal PowerShell di Windows, masuk ke folder WSL via network path `cd \\wsl.localhost\Ubuntu\home\dedik\project\audio-library-starter`, lalu jalankan `python build_desktop.py --install-deps --installer` menggunakan Python Windows. PyInstaller membutuhkan environment Windows agar dapat menghasilkan file `.exe` Windows.
+**J:** Buka terminal PowerShell di Windows, masuk ke folder WSL via network path `cd \\wsl.localhost\Ubuntu\home\dedik\project\audio-library-starter`, lalu jalankan `python packaging/build_desktop.py --install-deps --installer` menggunakan Python Windows. PyInstaller membutuhkan environment Windows agar dapat menghasilkan file `.exe` Windows.

@@ -73,5 +73,10 @@ Desktop.ini
 *~
 .vendor/
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+node_modules/
+
 # Rename undo history (runtime state)
 library/rename_history.json

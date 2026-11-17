@@ -112,7 +112,7 @@ def test_packaging_manifest_includes_session_tls_runtime():
     root = Path(__file__).resolve().parents[1]
     requirements = (root / 'requirements.txt').read_text()
     assert 'cryptography==50.0.2' in requirements
-    spec = (root / 'SwarariaAudioLab.spec').read_text()
+    spec = (root / 'packaging' / 'SwarariaAudioLab.spec').read_text()
     ast.parse(spec)
     assert '"secure_remote"' in spec and '"secure_remote_tls"' in spec
     assert 'collect_all("cryptography")' in spec
