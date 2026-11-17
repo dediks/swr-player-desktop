@@ -1,6 +1,4 @@
 """Native remote security/transport regressions; no external networking."""
-import sys
-from pathlib import Path
 
 
 def test_pairing_requires_one_time_invite_and_local_approval():

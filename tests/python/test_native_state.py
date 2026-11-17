@@ -1,6 +1,4 @@
 """Native display metadata must not leak local paths or unrelated library data."""
-import sys
-from pathlib import Path
 
 
 def test_state_has_bounded_track_title_without_paths_or_library_metadata():

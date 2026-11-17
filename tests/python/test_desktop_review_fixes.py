@@ -1,13 +1,10 @@
 """Review regressions: all privileged boundaries mocked; no LAN binds."""
 import base64
 import re
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 
-from swararia.server import hub as srv_hub, network as srv_network
 
 
 def test_native_removal_rejects_residual_profile_subset_at_subprocess_boundary():

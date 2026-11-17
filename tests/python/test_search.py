@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 from swararia.core import audio_manager
 
 
-from swararia.server import handler as srv_handler
 
 
 def test_search_empty_or_whitespace_returns_empty():

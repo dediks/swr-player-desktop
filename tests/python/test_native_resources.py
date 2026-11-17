@@ -1,6 +1,4 @@
 """Resource/cleanup tests only bind loopback; no external services."""
-import sys
-from pathlib import Path
 
 
 def test_tls_connections_have_absolute_deadline_even_for_partial_requests():

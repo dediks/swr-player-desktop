@@ -1,5 +1,3 @@
-import sys
-from pathlib import Path
 
 from unittest import mock
 
@@ -7,7 +5,6 @@ from unittest import mock
 from swararia.core import audio_manager as am  # noqa: E402
 
 
-from swararia.server import handler as srv_handler, state as srv_state
 
 
 import shutil

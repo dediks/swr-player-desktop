@@ -1,5 +1,4 @@
 """Additive browser/native regressions. All live sockets explicit loopback."""
-import sys
 from pathlib import Path
 import contextlib
 import http.client
@@ -7,7 +6,7 @@ import json
 import threading
 from unittest.mock import patch
 
-from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
+from swararia.server import handler as srv_handler, hub as srv_hub, network as srv_network
 
 
 @contextlib.contextmanager

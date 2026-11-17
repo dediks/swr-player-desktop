@@ -1,6 +1,5 @@
 import contextlib
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 from unittest import mock

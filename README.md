@@ -44,8 +44,8 @@ Workstation lokal berbasis web & CLI untuk **Audio Engineer**, **Operator FOH / 
 
 Aplikasi ini dapat dijalankan dalam **2 mode**:
 
-1. **Desktop App Mode (`desktop_app.py`)**: Membuka jendela aplikasi desktop mandiri (_Native OS Window_ via `pywebview` atau _Standalone App Window_).
-2. **Web Server Mode (`web_ui.py`)**: Menjalankan server lokal di `http://127.0.0.1:8765` untuk diakses lewat browser.
+1. **Desktop App Mode (`python -m swararia.desktop`)**: Membuka jendela aplikasi desktop mandiri (_Native OS Window_ via `pywebview` atau _Standalone App Window_).
+2. **Web Server Mode (`python -m swararia`)**: Menjalankan server lokal di `http://127.0.0.1:8765` untuk diakses lewat browser.
 
 ### Cara 1-Klik (Otomatis Setup `.venv` + Dependencies + Buka Jendela Desktop):
 
@@ -108,8 +108,8 @@ source .venv/bin/activate       # Di Windows: .venv\Scripts\activate.bat
 pip install -r requirements.txt
 
 # 3. Jalankan sebagai Desktop App ATAU Web Server
-python3 desktop_app.py          # Mode Jendela Desktop
-python3 web_ui.py               # Mode Server Browser (http://127.0.0.1:8765)
+python3 -m swararia.desktop      # Mode Jendela Desktop
+python3 -m swararia               # Mode Server Browser (http://127.0.0.1:8765)
 ```
 
 Halaman Workstation:
@@ -121,35 +121,37 @@ Halaman Workstation:
 
 ---
 
-## 💻 Penggunaan CLI (`audio_manager.py`)
+## 💻 Penggunaan CLI (`python -m swararia.core.audio_manager`)
 
 ### 1. Pencarian YouTube Music via Terminal
 
 ```bash
-python3 audio_manager.py search "Sheila on 7" --type songs --limit 10
+python3 -m swararia.core.audio_manager search "Sheila on 7" --type songs --limit 10
 ```
 
 ### 2. Audit Koleksi Audio Lokal ke CSV (Tanpa YouTube)
 
 ```bash
-python3 audio_manager.py scan "/path/ke/koleksi/musik" --out quality_report.csv
+python3 -m swararia.core.audio_manager scan "/path/ke/koleksi/musik" --out quality_report.csv
 ```
 
 ### 3. Unduh Audio Berizin + Audit QC Otomatis
 
 ```bash
 # Native Opus 48kHz / AAC (0% Generation Loss):
-python3 audio_manager.py download "URL_KONTEN_BERIZIN" --authorized --scan
+python3 -m swararia.core.audio_manager download "URL_KONTEN_BERIZIN" --authorized --scan
 
 # MP3 320 kbps CBR (Kompatibilitas CDJ / USB):
-python3 audio_manager.py download "URL_KONTEN_BERIZIN" --authorized --format mp3 --bitrate 320 --scan
+python3 -m swararia.core.audio_manager download "URL_KONTEN_BERIZIN" --authorized --format mp3 --bitrate 320 --scan
 
 # Playlist Otomatis Masuk Subfolder:
-python3 audio_manager.py download "URL_PLAYLIST_BERIZIN" --authorized --playlist --scan
+python3 -m swararia.core.audio_manager download "URL_PLAYLIST_BERIZIN" --authorized --playlist --scan
 ```
 
 ---
 
 ## 📖 Dokumentasi Teknis Lengkap
+
+Arsitektur kode, aturan layer, dan cara menambah rute: [**`docs/architecture.md`**](./docs/architecture.md).
 
 Lihat [**`DOCUMENTATION.md`**](./docs/DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.

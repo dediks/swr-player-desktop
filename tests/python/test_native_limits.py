@@ -1,5 +1,4 @@
 """Native v1 delivery cancellation, resource bounds and request-log privacy."""
-import sys
 import time
 from pathlib import Path
 

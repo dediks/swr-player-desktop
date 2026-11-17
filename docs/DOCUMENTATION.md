@@ -12,7 +12,7 @@ Selamat datang di dokumentasi resmi **SWARARIA AUDIO LAB (Pro Audio Ingestion, S
 4. [Struktur Direktori & Modul](#4-struktur-direktori--modul)
 5. [Prasyarat, Instalasi & Packaging Desktop App](#5-prasyarat-instalasi--packaging-desktop-app)
 6. [Panduan Alur Kerja Web UI (Stage 1 s/d Stage 4)](#6-panduan-alur-kerja-web-ui-stage-1-sd-stage-4)
-7. [Panduan Penggunaan CLI (`audio_manager.py`)](#7-panduan-penggunaan-cli-audio_managerpy)
+7. [Panduan Penggunaan CLI (`swararia.core.audio_manager`)](#7-panduan-penggunaan-cli-swarariacoreaudio_manager)
 8. [Standar Audio QC & Metrik Soundsystem (EBU R128 & Spektrum)](#8-standar-audio-qc--metrik-soundsystem-ebu-r128--spektrum)
 9. [Dokumentasi REST API Internal](#9-dokumentasi-rest-api-internal)
 10. [Sistem Pembaruan Otomatis (In-App GitHub Release Auto-Updater)](#10-sistem-pembaruan-otomatis-in-app-github-release-auto-updater)
@@ -69,13 +69,13 @@ Untuk menghindari penumpukan tombol dan kebingungan kognitif (_cognitive overloa
 ### A. Auto Loudness Normalization & True Peak Limiter (`EBU R128`)
 
 - **Masalah di Lapangan:** Saat memutar playlist dari berbagai sumber di acara pernikahan/konser, lagu pertama bisa sangat pelan ($-18\text{ LUFS}$) sedangkan lagu berikutnya tiba-tiba meledak keras ($-6\text{ LUFS}$ dan kliping di $+1.2\text{ dBTP}$), memaksa operator terus-menerus menjaga fader.
-- **Solusi (`audio_manager.py` $\rightarrow$ `normalize_one()` & `resample_one()`):**
+- **Solusi (`swararia/core/audio_manager/conversion.py` $\rightarrow$ `normalize_one()` & `resample_one()`):**
   Menggunakan filter FFmpeg `loudnorm=I=-14:TP=-1.5:LRA=11` yang dikombinasikan dengan resampler **SoXR 28-bit**. Seluruh lagu memiliki rata-rata kekerasan yang seragam (**$-14\text{ LUFS}$** atau **$-16\text{ LUFS}$**) dan puncak gelombang analognya dikunci rapat di bawah **$-1.5\text{ dBTP}$**.
 
 ### B. Fake Bitrate / Spectral Quality Detector (`Anti-Fake 320 kbps`)
 
 - **Masalah di Lapangan:** Banyak file audio di internet memiliki metadata `MP3 320 kbps` (atau `FLAC`/`WAV`), tetapi sebenarnya berasal dari sumber berkualitas rendah ($128\text{ kbps}$) yang di-_upsample_. Saat diputar di _line array_ panggung besar, suara _high-hat_ terdengar tipis, kasar (_phasiness_), dan mendem.
-- **Solusi (`audio_manager.py` $\rightarrow$ `analyze_spectral_quality()`):**
+- **Solusi (`swararia/core/audio_manager/audio_analysis.py` $\rightarrow$ `analyze_spectral_quality()`):**
   Mengukur energi RMS pada pita referensi tengah ($1\text{ kHz}$) dibandingkan dengan pita frekuensi tinggi ($16\text{ kHz}$ dan $20\text{ kHz}$) pada segmen puncak lagu:
   - **`AUTHENTIC_HQ` (`✨ 20kHz Asli`)**: Energi di atas $19.5\text{ kHz}$ terdeteksi utuh.
   - **`STANDARD_LOSSY` (`✓ 16kHz Full`)**: Spektrum normal hingga $16\text{ kHz}$–$18\text{ kHz}$.
@@ -84,7 +84,7 @@ Untuk menghindari penumpukan tombol dan kebingungan kognitif (_cognitive overloa
 ### C. Batch Auto-Numbering & YouTube Tag Cleaner Studio
 
 - **Masalah di Lapangan:** File hasil unduhan sering memiliki nama panjang yang mengacaukan urutan abjad di layar CDJ/Mixer dan dipenuhi tag sampah seperti `Lagu Pop (Official Music Video) [HD] [dQw4w9WgXcQ].mp3`.
-- **Solusi (`fs_browser.py` $\rightarrow$ `clean_and_number_filename()` & `batch_rename_entries()`):**
+- **Solusi (`swararia/core/fs_browser/batch_rename.py` $\rightarrow$ `clean_and_number_filename()` & `batch_rename_entries()`):**
   - Menghapus ID YouTube 11 karakter di akhir judul (`[dQw4w9WgXcQ]`).
   - Menghapus tag tidak relevan (`(Official Music Video)`, `[Official Audio]`, `(Lyrics)`, `(Lirik)`, `[HD]`, `[4K]`, `(Visualizer)`, `[MV]`, termasuk yang dipisahkan oleh karakter pipa `｜` atau `|`).
   - Mengubah garis bawah (`_`) dan karakter pipa menjadi pemisah bersih, lalu memberi nomor urut track otomatis (`01 - `, `001 - `, atau `01. `) lengkap dengan **Live Diff Preview** sebelum diterapkan ke disk.
@@ -95,49 +95,47 @@ Untuk menghindari penumpukan tombol dan kebingungan kognitif (_cognitive overloa
 
 ```text
 audio-library-starter/
-├── desktop_app.py            # Launcher aplikasi desktop mandiri (pywebview Native Window + App-Mode fallback)
-├── build_desktop.py          # Script builder otomatis desktop app + Inno Setup compiler (--installer)
-├── build_installer.bat       # 1-Click Builder Windows Setup Wizard (.exe) dari nol hingga jadi
-├── SwarariaAudioLab.spec     # Konfigurasi bundling PyInstaller (menyertakan static/, yt-dlp, & FFmpeg)
-├── installer.iss             # Konfigurasi Inno Setup untuk membuat installer Windows (SwarariaAudioLab_Setup.exe)
-├── run.bat                   # 1-Click Runner Script untuk Windows (Auto .venv, pip, verify FFmpeg & launch Desktop)
-├── run.sh                    # 1-Command Runner Script untuk Linux & macOS (Auto .venv, pip, verify FFmpeg & launch)
-├── requirements.txt          # Spesifikasi dependensi Python resmi (yt-dlp & pywebview)
-├── audio_manager.py          # Engine inti FFmpeg: QC EBU R128, Spectral Analyzer, SoXR Resampler, Normalizer, & CLI
-├── task_engine.py            # Worker antrian FIFO latar belakang, caching metadata/QC, & orkestrasi batch
-├── fs_browser.py             # Operasi filesystem aman: rename, batch auto-number/clean, delete, & directory picker
-├── splitter_engine.py        # Engine pemotong multitrack WAV / video konser losslessly
-├── web_ui.py                 # Server HTTP lokal (127.0.0.1:8765) & routing 4 halaman + REST API + Auto-Update
-├── README.md                 # Panduan ringkas proyek
-├── DOCUMENTATION.md          # Dokumentasi teknis lengkap (file ini)
+├── README.md                    # Panduan ringkas proyek
+├── pyproject.toml               # Metadata paket, konfigurasi pytest & ruff
+├── requirements.txt             # Dependensi runtime (yt-dlp, mutagen, cryptography, pywebview)
+├── requirements-dev.txt         # Dependensi pengembangan (pytest, ruff)
+├── run.sh / run.bat             # Runner 1-klik (auto .venv, pip, verifikasi FFmpeg, launch)
+├── .github/workflows/ci.yml     # CI: ruff + pytest + Node tests
+├── docs/                        # Dokumentasi (file ini, architecture.md, SECURE_REMOTE.md, handoff/)
+├── packaging/                   # PyInstaller spec, Inno Setup, build_desktop.py, build_installer.bat, launcher.py
+├── swararia/                    # Paket Python (lihat docs/architecture.md)
+│   ├── config.py                # REPO_ROOT, PACKAGE_DIR, STATIC_DIR
+│   ├── __main__.py              # `python -m swararia` -> server web
+│   ├── core/                    # Logika domain (tanpa HTTP)
+│   │   ├── audio_manager/       # FFmpeg/yt-dlp: constants, toolchain, ytdlp_engine, audio_analysis,
+│   │   │                        #   yt_cookies, yt_search, yt_playlist, conversion, cli
+│   │   ├── fs_browser/          # Filesystem aman: safe_paths, browse, entry_ops, rename_history,
+│   │   │                        #   batch_rename, organize
+│   │   ├── task_engine.py       # Antrian FIFO latar belakang & cache metadata/QC
+│   │   ├── splitter_engine.py   # Pemotong multitrack WAV / video konser
+│   │   └── youtube_login.py     # Sesi login YouTube berbasis browser
+│   ├── remote/                  # secure_remote.py (pairing/sesi), secure_remote_tls.py (listener TLS)
+│   ├── server/                  # Server HTTP lokal (stdlib)
+│   │   ├── app.py               # LocalAudioServer, create_server, main
+│   │   ├── handler.py           # AudioServerHandler (gerbang keamanan, header, send_json)
+│   │   ├── routes/              # Mixin rute: get, post, post_ingest, post_library,
+│   │   │                        #   post_splitter, streaming, native_admin
+│   │   ├── hub.py               # RemotePlayerHub (remote browser HP)
+│   │   ├── network.py           # LAN/WSL/Windows bridge & firewall
+│   │   ├── updates.py           # Cek & instal update GitHub
+│   │   ├── system.py            # Status biner & sesi login YouTube
+│   │   └── state.py             # Path, konstanta (APP_VERSION), singleton
+│   ├── desktop/app.py           # Launcher desktop (pywebview + fallback app-mode)
+│   └── web/static/              # Frontend vanilla ES modules (URL: /static/...)
+│       ├── pages/<halaman>/     # index.html + index.js: ingest, qc, converter, organizer,
+│       │                        #   multitrack, video-split, player
+│       ├── modules/             # Modul bersama (ui-shared, spa-router, table-groups, dll.)
+│       ├── css/                 # style, player, converter, ingest, splitter, native-remote
+│       └── assets/              # swararia-logo.jpg
 ├── tests/
-│   ├── run_tests.py          # Minimal test runner
-│   ├── test_ingest.py        # Unit test ingest & selector yt-dlp
-│   ├── test_organizer.py     # Unit test auto-numbering & tag cleaner
-│   └── test_update_checker.py # Unit test semver parsing & GitHub update checker
-├── library/
-│   ├── downloaded_ids.txt    # Arsip ID lagu untuk mencegah unduhan duplikat
-│   └── inbox/                # Direktori default koleksi audio (mendukung subfolder playlist)
-└── static/
-    ├── index.html            # Stage 1: Batch Audio Ingestion UI
-    ├── app.js                # Logika Stage 1 (Ingest form, Queue monitor, Pipeline Hub)
-    ├── qc.html               # Stage 2: Soundsystem QC & Spectral Lab UI
-    ├── qc.js                 # Logika Stage 2 (4 KPI Cards, Spectral Probe, Full EBU R128 Audit)
-    ├── converter.html        # Stage 3: Sample Rate Converter & EBU R128 Loudness UI
-    ├── converter.js          # Logika Stage 3 (SoXR MP3, Lossless Remux .opus, Normalizer -14/-16 LUFS)
-    ├── organizer.html        # Stage 4: Tag & File Organizer Studio UI
-    ├── organizer.js          # Logika Stage 4 (Live Diff Preview, Auto-Numbering, Grouping Tipe, Batch Delete)
-    ├── style.css             # Sistem desain utama (shadcn/ui Dark High-Contrast Zinc/Black)
-    ├── converter.css         # Komponen kompak khusus kontrol segmen, tabel grup, & toolbar
-    ├── swararia-logo.jpg     # Aset logo resmi SWARARIA AUDIO LAB
-    └── modules/
-        ├── ui-shared.js      # Header 4-tahap, Shared Workspace State, Spectral Badge, & API helpers
-        ├── table-groups.js   # Engine pengelompokan tabel (Folder, Tipe File, Folder+Tipe, Sample Rate)
-        ├── rename-modal.js   # Modal rename tunggal, konfirmasi hapus, & batch rename
-        ├── folder-modal.js   # Browser direktori interaktif (mendukung pemilihan Drive / USB)
-        ├── queue-monitor.js  # Poller status antrian & stream log real-time
-        ├── notifications.js  # Toast notifikasi & pusat riwayat notifikasi + sintesis Web Audio
-        └── dom-icons.js      # Pembuat ikon SVG murni via createElementNS (bebas innerHTML)
+│   ├── python/                  # test_*.py + run_tests.py (runner tanpa pytest)
+│   └── js/                      # *.test.mjs (Node)
+└── library/                     # Data runtime (gitignored): inbox/, downloaded_ids.txt
 ```
 
 ---
@@ -202,8 +200,8 @@ python packaging/build_desktop.py --clean --installer
 pip install -r requirements.txt
 
 # 2. Jalankan Desktop App ATAU Web Server
-python3 desktop_app.py   # Jendela Desktop Mandiri
-python3 web_ui.py        # Web Server Lokal (http://127.0.0.1:8765)
+python3 -m swararia.desktop   # Jendela Desktop Mandiri
+python3 -m swararia          # Web Server Lokal (http://127.0.0.1:8765)
 ```
 
 ---
@@ -213,7 +211,7 @@ python3 web_ui.py        # Web Server Lokal (http://127.0.0.1:8765)
 Jalankan server:
 
 ```bash
-python3 web_ui.py
+python3 -m swararia
 ```
 
 Buka browser di **`http://127.0.0.1:8765`**.
@@ -257,22 +255,22 @@ Buka browser di **`http://127.0.0.1:8765`**.
 
 ---
 
-## 7. Panduan Penggunaan CLI (`audio_manager.py`)
+## 7. Panduan Penggunaan CLI (`swararia.core.audio_manager`)
 
 Selain melalui Web UI, Anda dapat menjalankan fungsi inti melalui terminal:
 
 ```bash
 # 1. Cari musik/playlist di YouTube Music langsung dari CLI:
-python3 audio_manager.py search "Sheila on 7" --type songs --limit 10
+python3 -m swararia.core.audio_manager search "Sheila on 7" --type songs --limit 10
 
 # 2. Audit QC folder audio lokal & ekspor laporan CSV:
-python3 audio_manager.py scan "/path/ke/folder/audio" --out quality_report.csv
+python3 -m swararia.core.audio_manager scan "/path/ke/folder/audio" --out quality_report.csv
 
 # 3. Unduh Native Audio (Opus 48kHz / AAC) + QC:
-python3 audio_manager.py download "URL_TRACK_ATAU_PLAYLIST" --authorized --playlist --scan
+python3 -m swararia.core.audio_manager download "URL_TRACK_ATAU_PLAYLIST" --authorized --playlist --scan
 
 # 4. Unduh langsung ke MP3 CBR 320 kbps:
-python3 audio_manager.py download "URL_TRACK" --authorized --format mp3 --bitrate 320 --scan
+python3 -m swararia.core.audio_manager download "URL_TRACK" --authorized --format mp3 --bitrate 320 --scan
 ```
 
 ---
@@ -290,7 +288,7 @@ python3 audio_manager.py download "URL_TRACK" --authorized --format mp3 --bitrat
 
 ## 9. Dokumentasi REST API Internal
 
-Server lokal [`web_ui.py`](file:///home/dedik/project/audio-library-starter/web_ui.py) menyediakan rute halaman HTML dan endpoint JSON RESTful:
+Server lokal [`swararia/server`](../swararia/server) (`handler.py` + `routes/`) menyediakan rute halaman HTML dan endpoint JSON RESTful:
 
 ### Rute Halaman HTML (`GET`)
 
@@ -349,7 +347,7 @@ Aplikasi telah dilengkapi subsistem pembaruan mandiri terintegrasi dengan GitHub
 ### B. Alur Kerja Rilis Pengembang (Developer Release Flow)
 Setiap kali ada perbaikan bug atau penambahan fitur:
 1. **Perbarui Nomor Versi**:
-   - `web_ui.py`: Ubah `APP_VERSION = "1.0.1"`
+   - `swararia/server/state.py`: Ubah `APP_VERSION = "1.0.1"`
    - `installer.iss`: Ubah `#define MyAppVersion "1.0.1"`
 2. **Rebuild Installer Windows**:
    ```cmd
@@ -367,8 +365,8 @@ Setiap kali ada perbaikan bug atau penambahan fitur:
 ## 11. Keamanan Aplikasi (Secure Coding Standards)
 
 1. **Strict Localhost Binding:** Server HTTP diikat secara eksklusif ke `127.0.0.1:8765` dan tidak membuka port ke jaringan publik (`0.0.0.0`).
-2. **Zero DOM XSS:** Seluruh kode JavaScript di `static/` menggunakan `document.createElement()`, `document.createElementNS()`, dan `textContent`. Tidak ada penggunaan `innerHTML`, `outerHTML`, `insertAdjacentHTML`, atau `document.write`.
-3. **Strict Path Boundary Validation:** Semua operasi baca/ubah/hapus di [`fs_browser.py`](file:///home/dedik/project/audio-library-starter/fs_browser.py) meresolusi path absolut (`Path.resolve()`) dan memverifikasi bahwa target berada tepat di bawah direktori sumber yang diizinkan (mencegah _Path Traversal_ `../`).
+2. **Zero DOM XSS:** Seluruh kode JavaScript di `swararia/web/static/` menggunakan `document.createElement()`, `document.createElementNS()`, dan `textContent`. Tidak ada penggunaan `innerHTML`, `outerHTML`, `insertAdjacentHTML`, atau `document.write`.
+3. **Strict Path Boundary Validation:** Semua operasi baca/ubah/hapus di [`swararia/core/fs_browser`](../swararia/core/fs_browser) meresolusi path absolut (`Path.resolve()`) dan memverifikasi bahwa target berada tepat di bawah direktori sumber yang diizinkan (mencegah _Path Traversal_ `../`).
 4. **Safe Subprocess Execution:** Pemanggilan `ffmpeg`, `ffprobe`, dan `yt-dlp` selalu menggunakan array argumen terstruktur tanpa `shell=True`.
 5. **Verified Release Sinks:** Endpoint `/api/install-update` hanya menerima permintaan dari klien localhost dan memvalidasi awalan URL unduhan terhadap allow-list domain rilis resmi GitHub (`https://github.com/dediks/audio-library/releases/download/`).
 
