@@ -15,7 +15,7 @@ datas = [
 
 binaries = []
 hiddenimports = [
-    "swararia.server.web_ui",
+    "swararia.server.app",
     "swararia.remote.secure_remote",
     "swararia.remote.secure_remote_tls",
     "swararia.core.audio_manager",

@@ -5,7 +5,7 @@ from pathlib import Path
 
 def test_pairing_requires_one_time_invite_and_local_approval():
     from swararia.remote.secure_remote import SecureRemote, RemoteError
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     now = [100.0]
     remote = SecureRemote(RemotePlayerHub(), clock=lambda: now[0])
     assert remote.admin_status()['enabled'] is False
@@ -40,7 +40,7 @@ def test_pairing_requires_one_time_invite_and_local_approval():
 
 def test_commands_deduplicate_expire_and_require_observed_ack():
     from swararia.remote.secure_remote import SecureRemote, RemoteError
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     import time
     now = [time.time()]
     hub = RemotePlayerHub()
@@ -95,7 +95,7 @@ def test_commands_deduplicate_expire_and_require_observed_ack():
 
 def test_tls_pinned_pair_state_roles_and_strict_protocol():
     from swararia.remote.secure_remote import SecureRemote, RemoteError
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     import hashlib
     import http.client
     import json
@@ -188,7 +188,7 @@ def test_tls_advertised_lan_san_and_posix_immediate_restart():
     import ssl
     from cryptography import x509
     from swararia.remote.secure_remote import SecureRemote
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     remote = SecureRemote(RemotePlayerHub())
     remote.start('127.0.0.1', 0, advertise_ip='192.168.18.47', advertise_port=8767)
     try:
@@ -220,7 +220,7 @@ def test_tls_advertised_lan_san_and_posix_immediate_restart():
 
 
 def test_fade_out_command_requires_fading_state_and_rejects_paused():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote
     remote = SecureRemote(RemotePlayerHub())
     remote.activate()
@@ -250,7 +250,7 @@ def test_fade_out_command_requires_fading_state_and_rejects_paused():
 
 def test_tracks_catalog_sanitization_and_select_track_commands():
     import json
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote, RemoteError
     now = [1000.0]
     remote = SecureRemote(RemotePlayerHub(), clock=lambda: now[0])
@@ -315,7 +315,7 @@ def test_tracks_catalog_sanitization_and_select_track_commands():
 
 
 def test_tracks_catalog_groups_and_select_group_command():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote, RemoteError
     remote = SecureRemote(RemotePlayerHub())
     remote.activate()
@@ -373,7 +373,7 @@ def test_media_transfer_disabled_by_default_and_streams_verified_audio(tmp_path)
     import ssl
     import urllib.parse
     from swararia.core import fs_browser
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote
 
     inbox = tmp_path / 'inbox'

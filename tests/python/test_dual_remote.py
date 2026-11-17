@@ -7,11 +7,14 @@ import json
 import threading
 from unittest.mock import patch
 
+from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
+
+
 @contextlib.contextmanager
 def running():
-    from swararia.server import web_ui
-    with patch.object(web_ui, 'remote_hub', web_ui.RemotePlayerHub()), patch.object(web_ui, '_cleanup_stale_wsl_listen_port'):
-        server, port = web_ui.create_server('127.0.0.1', 0)
+    from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
+    with patch.object(srv_hub, 'remote_hub', srv_hub.RemotePlayerHub()), patch.object(srv_network, '_cleanup_stale_wsl_listen_port'):
+        server, port = srv_app.create_server('127.0.0.1', 0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         def request(method, path, payload=None, headers=None):
@@ -24,7 +27,7 @@ def running():
             conn.close()
             return response.status, json.loads(data) if data else None
         try:
-            yield web_ui, server, request, {'Origin': f'http://127.0.0.1:{port}'}
+            yield srv_app, server, request, {'Origin': f'http://127.0.0.1:{port}'}
         finally:
             server.shutdown()
             server.server_close()
@@ -38,12 +41,12 @@ def test_browser_pin_state_all_actions_and_device_controls():
         headers = {'X-FOH-PIN': pin, 'X-FOH-Client-ID': 'browser-test'}
         assert req('GET', '/api/remote/state', headers={'X-FOH-PIN': 'bad'})[0] == 401
         assert req('GET', '/api/remote/state', headers=headers)[0] == 200
-        assert len(web.ALLOWED_REMOTE_ACTIONS) == 25
-        for action in sorted(web.ALLOWED_REMOTE_ACTIONS):
+        assert len(srv_hub.ALLOWED_REMOTE_ACTIONS) == 25
+        for action in sorted(srv_hub.ALLOWED_REMOTE_ACTIONS):
             assert req('POST', '/api/remote/command', {'action': action, 'params': {'value': 1}}, headers)[0] == 200, action
         status, state = req('POST', '/api/remote/state', {'state': {'is_playing': False}})
         assert status == 200
-        assert {c['action'] for c in state['commands']} == web.ALLOWED_REMOTE_ACTIONS
+        assert {c['action'] for c in state['commands']} == srv_hub.ALLOWED_REMOTE_ACTIONS
         assert state['active_remotes_count'] == 1
         assert state['pin'] == pin and state['enabled']
         assert req('POST', '/api/remote/state', {})[1]['commands'] == []
@@ -56,8 +59,8 @@ def test_browser_pin_state_all_actions_and_device_controls():
         assert req('POST', '/api/remote/state', {'enabled': False})[1]['enabled'] is False
         assert req('GET', '/api/remote/state', headers=headers)[1]['code'] == 'DISABLED'
         assert req('POST', '/api/remote/state', {'enabled': True, 'regenerate_pin': True})[0] == 200
-        assert web.remote_hub.get_clients_lists() == ([], [])
-        with patch.object(web, 'enable_wsl_port_bridge', return_value=(True, 'ok', {})) as bridge:
+        assert srv_hub.remote_hub.get_clients_lists() == ([], [])
+        with patch.object(srv_network, 'enable_wsl_port_bridge', return_value=(True, 'ok', {})) as bridge:
             assert req('POST', '/api/remote/wsl-bridge', {})[0] == 200
             bridge.assert_called_once()
 
@@ -72,14 +75,14 @@ def test_shared_master_queue_is_once_only_and_browser_reset_preserves_native():
         assert req('POST', '/api/remote/state', payload)[0] == 403, 'native fields require Origin even on loopback'
         assert req('POST', '/api/remote/state', payload, origin)[0] == 200
         native = remote.command(pair['token'], 'play', 'dual-request-001')
-        headers = {'X-FOH-PIN': web.remote_hub.pin}
+        headers = {'X-FOH-PIN': srv_hub.remote_hub.pin}
         assert req('POST', '/api/remote/command', {'action': 'stop'}, headers)[0] == 200
         # Old master may consume browser work, but never native work or native heartbeat.
         plain = req('POST', '/api/remote/state', {'state': {'is_playing': False}})[1]
         assert [c['action'] for c in plain['commands']] == ['stop']
         assert req('POST', '/api/remote/state', {'enabled': False})[0] == 200
         assert req('POST', '/api/remote/state', {'regenerate_pin': True})[0] == 200
-        assert len(web.remote_hub.command_queue) == 1
+        assert len(srv_hub.remote_hub.command_queue) == 1
         result = req('POST', '/api/remote/state', payload, origin)[1]
         assert [c['native_id'] for c in result['commands']] == [native['command_id']]
         assert result['active_remotes_count'] == 0
@@ -93,7 +96,7 @@ def test_shared_master_queue_is_once_only_and_browser_reset_preserves_native():
         assert remote.command_status(pair['token'], native['command_id'])['status'] == 'applied'
         req('POST', '/api/remote/state', {'enabled': True})
         combined_native = remote.command(pair['token'], 'pause', 'dual-request-002')
-        req('POST', '/api/remote/command', {'action': 'stop'}, {'X-FOH-PIN': web.remote_hub.pin})
+        req('POST', '/api/remote/command', {'action': 'stop'}, {'X-FOH-PIN': srv_hub.remote_hub.pin})
         combined = req('POST', '/api/remote/state', payload, origin)[1]
         assert [c['action'] for c in combined['commands']] == ['pause', 'stop']
         assert combined['commands'][0]['native_id'] == combined_native['command_id']
@@ -101,19 +104,19 @@ def test_shared_master_queue_is_once_only_and_browser_reset_preserves_native():
         assert combined['active_remotes_count'] == 1 and len(combined['active_remotes']) == 1
         assert req('POST', '/api/remote/state', payload, origin)[1]['commands'] == []
         req('POST', '/api/remote/state', {'enabled': True})
-        req('POST', '/api/remote/command', {'action': 'pause'}, {'X-FOH-PIN': web.remote_hub.pin})
+        req('POST', '/api/remote/command', {'action': 'pause'}, {'X-FOH-PIN': srv_hub.remote_hub.pin})
         remote.stop()
-        assert web.remote_hub.enabled is True
+        assert srv_hub.remote_hub.enabled is True
         assert req('POST', '/api/remote/state', {})[1]['commands'][0]['action'] == 'pause'
 
 
 def test_simulated_lan_socket_keeps_browser_allowlist_but_cannot_forge_native_owner():
     with running() as (web, server, req, origin):
-        class LanPeer(web.AudioServerHandler):
+        class LanPeer(srv_handler.AudioServerHandler):
             def __init__(self, request, address, owner):
                 super().__init__(request, ('192.168.1.50', address[1]), owner)
         server.RequestHandlerClass = LanPeer
-        forged = {**origin, 'Forwarded': 'for=127.0.0.1', 'X-Forwarded-For': '127.0.0.1', 'X-FOH-PIN': web.remote_hub.pin}
+        forged = {**origin, 'Forwarded': 'for=127.0.0.1', 'X-Forwarded-For': '127.0.0.1', 'X-FOH-PIN': srv_hub.remote_hub.pin}
         status, info = req('GET', '/api/remote/info', headers=forged)
         assert status == 200 and info['is_localhost'] is False
         assert 'pin' not in info and 'wsl_bridge' not in info and 'active_remotes' not in info
@@ -135,9 +138,9 @@ def test_simulated_lan_socket_keeps_browser_allowlist_but_cannot_forge_native_ow
 
 
 def test_browser_reset_and_disconnect_all_only_clear_browser_commands():
-    from swararia.server import web_ui
+    from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
     for operation in [lambda hub: hub.set_enabled(False), lambda hub: hub.regenerate_pin(), lambda hub: hub.kick_all_clients()]:
-        hub = web_ui.RemotePlayerHub()
+        hub = srv_hub.RemotePlayerHub()
         hub.command_queue = [{'native_id': 'native-marker', 'action': 'play'}, {'action': 'stop'}]
         operation(hub)
         assert hub.command_queue == [{'native_id': 'native-marker', 'action': 'play'}]
@@ -171,9 +174,9 @@ def test_native_dialog_connect_form_wraps_without_changing_browser_modal():
 
 
 def test_wsl_foh_companion_bridge_security_and_forwarding():
-    from swararia.server import web_ui as web
-    hub = web.RemotePlayerHub()
-    original_bind = web.LocalAudioServer.server_bind
+    from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
+    hub = srv_hub.RemotePlayerHub()
+    original_bind = srv_app.LocalAudioServer.server_bind
 
     def loopback_primary_bind(server):
         # Preserve logical wildcard startup (which creates the FOH companion),
@@ -182,21 +185,21 @@ def test_wsl_foh_companion_bridge_security_and_forwarding():
         server.server_address = ('127.0.0.1', server.server_address[1])
         return original_bind(server)
 
-    with patch.object(web, 'remote_hub', hub), \
-            patch.object(web.LocalAudioServer, 'server_bind', loopback_primary_bind), \
-            patch.object(web, 'is_wsl_environment', return_value=True), \
-            patch.object(web, '_cleanup_stale_wsl_listen_port'), \
-            patch.object(web, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
-            patch.object(web, 'get_local_lan_ips', return_value=['192.168.18.47']):
-        server, primary_port = web.create_server('0.0.0.0', 0)
+    with patch.object(srv_hub, 'remote_hub', hub), \
+            patch.object(srv_app.LocalAudioServer, 'server_bind', loopback_primary_bind), \
+            patch.object(srv_network, 'is_wsl_environment', return_value=True), \
+            patch.object(srv_network, '_cleanup_stale_wsl_listen_port'), \
+            patch.object(srv_network, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
+            patch.object(srv_network, 'get_local_lan_ips', return_value=['192.168.18.47']):
+        server, primary_port = srv_app.create_server('0.0.0.0', 0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             internal_port = server.wsl_foh_internal_port
             assert internal_port is not None
             assert internal_port not in (primary_port, primary_port + 1)
-            assert web._get_wsl_foh_internal_port(primary_port) == internal_port
-            bridge_port = web._get_wsl_remote_bridge_port(primary_port)
+            assert srv_network._get_wsl_foh_internal_port(primary_port) == internal_port
+            bridge_port = srv_network._get_wsl_remote_bridge_port(primary_port)
 
             def bridged_req(method, path, payload=None, headers=None, expect_json=True):
                 conn = http.client.HTTPConnection('127.0.0.1', internal_port, timeout=4)
@@ -243,63 +246,63 @@ def test_wsl_foh_companion_bridge_security_and_forwarding():
             server.shutdown()
             server.server_close()
             thread.join(4)
-            assert primary_port not in web._active_wsl_foh_ports
+            assert primary_port not in srv_network._active_wsl_foh_ports
 
 
 def test_wsl_foh_bridge_status_targets_internal_port_and_avoids_native_collision():
-    from swararia.server import web_ui as web
-    with patch.object(web, 'is_wsl_environment', return_value=True), \
-            patch.object(web, '_active_wsl_foh_ports', {}), \
-            patch.object(web, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
-            patch.object(web, 'get_local_lan_ips', return_value=['192.168.18.47']):
-        assert web._get_wsl_remote_bridge_port(8765) == 8766
-        assert web._get_native_remote_default_port(8765) == 8767
-        assert web._get_wsl_native_internal_port(8767, 8765) == 8768
-        assert web._get_wsl_foh_internal_port(8765) == 8769
-        assert web._get_wsl_native_internal_port(8768, 8765) not in {8765, 8766, 8768, 8769}
+    from swararia.server import app as srv_app, handler as srv_handler, hub as srv_hub, network as srv_network
+    with patch.object(srv_network, 'is_wsl_environment', return_value=True), \
+            patch.object(srv_network, '_active_wsl_foh_ports', {}), \
+            patch.object(srv_network, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
+            patch.object(srv_network, 'get_local_lan_ips', return_value=['192.168.18.47']):
+        assert srv_network._get_wsl_remote_bridge_port(8765) == 8766
+        assert srv_network._get_native_remote_default_port(8765) == 8767
+        assert srv_network._get_wsl_native_internal_port(8767, 8765) == 8768
+        assert srv_network._get_wsl_foh_internal_port(8765) == 8769
+        assert srv_network._get_wsl_native_internal_port(8768, 8765) not in {8765, 8766, 8768, 8769}
 
         def fake_bin(name):
             return f'/fake/{name}' if name in ('netsh.exe', 'curl.exe') else None
 
-        with patch.object(web, '_find_windows_sys32_bin', side_effect=fake_bin), \
-                patch.object(web, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '192.168.85.3', 8765)]), \
-                patch.object(web, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
-                patch.object(web, '_verify_windows_http_reachable', return_value=False):
-            st_old = web.get_wsl_bridge_status(8765)
+        with patch.object(srv_network, '_find_windows_sys32_bin', side_effect=fake_bin), \
+                patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '192.168.85.3', 8765)]), \
+                patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
+                patch.object(srv_network, '_verify_windows_http_reachable', return_value=False):
+            st_old = srv_network.get_wsl_bridge_status(8765)
             assert st_old['bridge_active'] is False
             assert st_old['bridge_port'] == 8766 and st_old['internal_port'] == 8769
             assert 'connectport=8769 connectaddress=127.0.0.1' in st_old['powershell_admin_cmd']
 
-        with patch.object(web, '_find_windows_sys32_bin', side_effect=lambda n: '/fake/netsh.exe' if n == 'netsh.exe' else None), \
-                patch.object(web, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '192.168.85.3', 8765)]), \
-                patch.object(web, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}):
-            assert web.get_wsl_bridge_status(8765)['bridge_active'] is False
+        with patch.object(srv_network, '_find_windows_sys32_bin', side_effect=lambda n: '/fake/netsh.exe' if n == 'netsh.exe' else None), \
+                patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '192.168.85.3', 8765)]), \
+                patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}):
+            assert srv_network.get_wsl_bridge_status(8765)['bridge_active'] is False
 
-        with patch.object(web, '_find_windows_sys32_bin', side_effect=fake_bin), \
-                patch.object(web, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
-                patch.object(web, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
-                patch.object(web, '_verify_windows_http_reachable', return_value=True):
-            assert web.get_wsl_bridge_status(8765)['bridge_active'] is True
+        with patch.object(srv_network, '_find_windows_sys32_bin', side_effect=fake_bin), \
+                patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
+                patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
+                patch.object(srv_network, '_verify_windows_http_reachable', return_value=True):
+            assert srv_network.get_wsl_bridge_status(8765)['bridge_active'] is True
 
-        with patch.object(web, '_find_windows_sys32_bin', side_effect=fake_bin), \
-                patch.object(web, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
-                patch.object(web, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': False}), \
-                patch.object(web, '_verify_windows_http_reachable', return_value=True):
-            assert web.get_wsl_bridge_status(8765)['bridge_active'] is False
+        with patch.object(srv_network, '_find_windows_sys32_bin', side_effect=fake_bin), \
+                patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
+                patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': False}), \
+                patch.object(srv_network, '_verify_windows_http_reachable', return_value=True):
+            assert srv_network.get_wsl_bridge_status(8765)['bridge_active'] is False
 
-        with patch.object(web, '_find_windows_sys32_bin', side_effect=lambda n: '/fake/' + n if n in ('powershell.exe', 'netsh.exe', 'curl.exe') else None), \
-                patch.object(web, '_run_elevated_windows_powershell', return_value=(True, '')) as run_ps, \
-                patch.object(web, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
-                patch.object(web, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
-                patch.object(web, '_verify_windows_http_reachable', return_value=True):
-            ok_en, msg_en, st_en = web.enable_wsl_port_bridge(8765)
+        with patch.object(srv_network, '_find_windows_sys32_bin', side_effect=lambda n: '/fake/' + n if n in ('powershell.exe', 'netsh.exe', 'curl.exe') else None), \
+                patch.object(srv_network, '_run_elevated_windows_powershell', return_value=(True, '')) as run_ps, \
+                patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', 8766, '127.0.0.1', 8769)]), \
+                patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={'Swararia FOH Remote 8766': True}), \
+                patch.object(srv_network, '_verify_windows_http_reachable', return_value=True):
+            ok_en, msg_en, st_en = srv_network.enable_wsl_port_bridge(8765)
             assert ok_en is True and st_en['bridge_active'] is True and '127.0.0.1:8769' in msg_en
             en_cmd = ' '.join(run_ps.call_args[0][0])
             assert 'connectport=8769 connectaddress=127.0.0.1' in en_cmd
             assert 'listenport=8765' in en_cmd and 'Swararia FOH Remote 8766' in en_cmd
 
             run_ps.reset_mock()
-            ok_dis, _, _ = web.disable_wsl_port_bridge(8765)
+            ok_dis, _, _ = srv_network.disable_wsl_port_bridge(8765)
             assert ok_dis is False, 'unchanged mocked rules must not claim removal'
             dis_cmd = ' '.join(run_ps.call_args[0][0])
             assert 'listenport=8766' in dis_cmd and 'listenport=8769' in dis_cmd

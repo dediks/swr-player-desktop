@@ -2,34 +2,37 @@
 """Tests for GitHub update checker & semver parsing logic."""
 from unittest.mock import MagicMock, patch
 
-from swararia.server import web_ui
+from swararia.server import updates as srv_updates
+
+
+from swararia.server import updates as srv_updates
 
 
 def test_parse_semver():
-    assert web_ui._parse_semver("1.0.0") == (1, 0, 0)
-    assert web_ui._parse_semver("v1.0.1") == (1, 0, 1)
-    assert web_ui._parse_semver("V2.10.4-beta") == (2, 10, 4)
-    assert web_ui._parse_semver("") == (0,)
+    assert srv_updates._parse_semver("1.0.0") == (1, 0, 0)
+    assert srv_updates._parse_semver("v1.0.1") == (1, 0, 1)
+    assert srv_updates._parse_semver("V2.10.4-beta") == (2, 10, 4)
+    assert srv_updates._parse_semver("") == (0,)
 
     # Version comparisons
-    assert web_ui._parse_semver("v1.0.1") > web_ui._parse_semver("1.0.0")
-    assert web_ui._parse_semver("v1.1.0") > web_ui._parse_semver("1.0.9")
-    assert web_ui._parse_semver("v2.0.0") > web_ui._parse_semver("1.9.9")
-    assert not (web_ui._parse_semver("1.0.0") > web_ui._parse_semver("v1.0.0"))
-    assert not (web_ui._parse_semver("0.9.9") > web_ui._parse_semver("1.0.0"))
+    assert srv_updates._parse_semver("v1.0.1") > srv_updates._parse_semver("1.0.0")
+    assert srv_updates._parse_semver("v1.1.0") > srv_updates._parse_semver("1.0.9")
+    assert srv_updates._parse_semver("v2.0.0") > srv_updates._parse_semver("1.9.9")
+    assert not (srv_updates._parse_semver("1.0.0") > srv_updates._parse_semver("v1.0.0"))
+    assert not (srv_updates._parse_semver("0.9.9") > srv_updates._parse_semver("1.0.0"))
 
 
 def test_install_update_package_url_validation():
     # Strict URL validation rejects external or malicious URLs
-    ok, msg = web_ui.install_update_package("https://evil.com/malicious.exe")
+    ok, msg = srv_updates.install_update_package("https://evil.com/malicious.exe")
     assert not ok
     assert "URL unduhan tidak sah" in msg
 
-    ok, msg = web_ui.install_update_package("javascript:alert(1)")
+    ok, msg = srv_updates.install_update_package("javascript:alert(1)")
     assert not ok
 
 
-@patch("swararia.server.web_ui.urlopen")
+@patch("swararia.server.updates.urlopen")
 def test_check_for_updates_mock_release(mock_urlopen):
     mock_resp = MagicMock()
     mock_resp.__enter__.return_value = mock_resp
@@ -49,7 +52,7 @@ def test_check_for_updates_mock_release(mock_urlopen):
     }"""
     mock_urlopen.return_value = mock_resp
 
-    res = web_ui.check_for_updates()
+    res = srv_updates.check_for_updates()
     assert res["ok"]
     assert res["has_update"]
     assert res["latest_version"] == "v1.1.0"

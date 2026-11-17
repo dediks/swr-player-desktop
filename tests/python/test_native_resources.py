@@ -7,7 +7,7 @@ def test_tls_connections_have_absolute_deadline_even_for_partial_requests():
     import socket
     import ssl
     from swararia.remote.secure_remote import SecureRemote
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     remote = SecureRemote(RemotePlayerHub())
     remote.start('127.0.0.1', 0)
     remote.listener.CONNECTION_TTL = 0.15
@@ -33,7 +33,7 @@ def test_shutdown_cannot_join_a_registered_but_unstarted_worker():
     from unittest.mock import patch
     from swararia.remote.secure_remote import SecureRemote
     from swararia.remote.secure_remote_tls import NativeTLSServer, tls_context
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     context, _, _ = tls_context('127.0.0.1')
     server = NativeTLSServer(('127.0.0.1', 0), SecureRemote(RemotePlayerHub()), context)
     left, right = socket.socketpair()
@@ -64,14 +64,14 @@ def test_shutdown_cannot_join_a_registered_but_unstarted_worker():
 
 def test_local_ui_port_conflict_keeps_legacy_loopback_fallback():
     import socket
-    from swararia.server.web_ui import create_server
+    from swararia.server.app import create_server
     busy = socket.socket()
     busy.bind(('127.0.0.1', 0))
     busy.listen(1)
     server = None
     try:
         from unittest.mock import patch
-        with patch('swararia.server.web_ui._cleanup_stale_wsl_listen_port'):
+        with patch('swararia.server.network._cleanup_stale_wsl_listen_port'):
             server, port = create_server('127.0.0.1', busy.getsockname()[1])
         assert port != busy.getsockname()[1]
         assert server.server_address[0] == '127.0.0.1'

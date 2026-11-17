@@ -5,7 +5,7 @@ from pathlib import Path
 
 def test_state_has_bounded_track_title_without_paths_or_library_metadata():
     from swararia.remote.secure_remote import SecureRemote
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     remote = SecureRemote(RemotePlayerHub(), clock=lambda: 1000.0)
     remote.activate()
     pair = remote.pair(remote.open_invite(), 'Display test')

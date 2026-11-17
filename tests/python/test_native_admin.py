@@ -3,17 +3,20 @@ import sys
 from pathlib import Path
 
 
+from swararia.server import app as srv_app, hub as srv_hub, network as srv_network
+
+
 def test_local_admin_csrf_lifecycle_and_native_command_handoff():
     import http.client
     import json
     import ssl
     import threading
-    from swararia.server import web_ui
+    from swararia.server import app as srv_app, hub as srv_hub, network as srv_network
     import inspect
-    assert inspect.signature(web_ui.create_server).parameters['host'].default == '0.0.0.0'  # accepted browser LAN compatibility
+    assert inspect.signature(srv_app.create_server).parameters['host'].default == '0.0.0.0'  # accepted browser LAN compatibility
     from unittest.mock import patch
-    with patch.object(web_ui, '_cleanup_stale_wsl_listen_port'):
-        server, port = web_ui.create_server('127.0.0.1', port=0)
+    with patch.object(srv_network, '_cleanup_stale_wsl_listen_port'):
+        server, port = srv_app.create_server('127.0.0.1', port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     origin = f'http://127.0.0.1:{port}'
@@ -39,10 +42,10 @@ def test_local_admin_csrf_lifecycle_and_native_command_handoff():
             assert local('POST', '/api/native-remote', {'action': 'invite_open'}, headers)[0] in (403, 415)
         assert local('GET', '/api/native-remote?ignored=1')[0] == 404
         from unittest.mock import patch
-        with patch.object(web_ui, 'enable_wsl_port_bridge', return_value=(True, 'ok', {})):
+        with patch.object(srv_network, 'enable_wsl_port_bridge', return_value=(True, 'ok', {})):
             assert local('POST', '/api/remote/wsl-bridge', {})[0] == 200
-        assert local('POST', '/api/remote/command', {'pin': web_ui.remote_hub.pin, 'action': 'play'})[0] == 200
-        web_ui.remote_hub.update_master_state({})
+        assert local('POST', '/api/remote/command', {'pin': srv_hub.remote_hub.pin, 'action': 'play'})[0] == 200
+        srv_hub.remote_hub.update_master_state({})
         status, info = local('POST', '/api/native-remote', {'action': 'start', 'bind_ip': '127.0.0.1', 'port': 0})
         assert status == 200 and info['enabled']
         _, info = local('POST', '/api/native-remote', {'action': 'invite_open'})
@@ -76,9 +79,9 @@ def test_local_admin_csrf_lifecycle_and_native_command_handoff():
         assert 'track' not in native('GET', '/v1/state', pair['token'])[1]['state']
         assert local('POST', '/api/native-remote', {'action': 'revoke', 'device_id': pair['device_id']})[0] == 200
         assert native('GET', '/v1/state', pair['token'])[1]['code'] == 'revoked'
-        assert web_ui.remote_hub.master_state['is_playing'] is True
+        assert srv_hub.remote_hub.master_state['is_playing'] is True
         assert local('POST', '/api/native-remote', {'action': 'stop'})[1]['enabled'] is False
-        assert web_ui.remote_hub.master_state['is_playing'] is True
+        assert srv_hub.remote_hub.master_state['is_playing'] is True
     finally:
         server.shutdown()
         server.server_close()
@@ -87,7 +90,7 @@ def test_local_admin_csrf_lifecycle_and_native_command_handoff():
 
 
 def test_plaintext_nonlocal_gate_does_not_trust_forwarded_headers():
-    from swararia.server.web_ui import AudioServerHandler
+    from swararia.server.handler import AudioServerHandler
     from email.message import Message
     from io import BytesIO
     for method, path in [('GET', '/api/native-remote'), ('POST', '/api/native-remote/claim'),
@@ -113,13 +116,13 @@ def test_desktop_launcher_uses_local_owner_and_cleans_tls():
     import types
     from unittest.mock import patch
     from swararia.desktop import app as desktop_app
-    from swararia.server import web_ui
+    from swararia.server import app as srv_app, hub as srv_hub, network as srv_network
     servers = []
-    real_create = web_ui.create_server
+    real_create = srv_app.create_server
     def create(host, port):
         assert host == '0.0.0.0', 'desktop preserves browser LAN startup; test substitutes loopback'
         from unittest.mock import patch
-        with patch.object(web_ui, '_cleanup_stale_wsl_listen_port'):
+        with patch.object(srv_network, '_cleanup_stale_wsl_listen_port'):
             server, actual = real_create('127.0.0.1', 0)
         servers.append(server)
         return server, actual
@@ -132,7 +135,7 @@ def test_desktop_launcher_uses_local_owner_and_cleans_tls():
     previous = sys.modules.get('webview')
     sys.modules['webview'] = fake_view
     try:
-        with patch.dict('os.environ', {'SWARARIA_FORCE_BROWSER': '0'}), patch.object(web_ui, 'create_server', create), patch.object(web_ui, 'get_local_lan_ips', return_value=['10.0.0.2']), contextlib.redirect_stdout(output):
+        with patch.dict('os.environ', {'SWARARIA_FORCE_BROWSER': '0'}), patch.object(srv_app, 'create_server', create), patch.object(srv_network, 'get_local_lan_ips', return_value=['10.0.0.2']), contextlib.redirect_stdout(output):
             assert desktop_app.main() == 0
     finally:
         if previous is None:
@@ -149,13 +152,13 @@ def test_cli_launcher_preserves_browser_startup_and_cleans_tls():
     import contextlib
     import io
     from unittest.mock import patch
-    from swararia.server import web_ui
-    real_create = web_ui.create_server
+    from swararia.server import app as srv_app, hub as srv_hub, network as srv_network
+    real_create = srv_app.create_server
     servers = []
     def create(host, port):
         assert host == '0.0.0.0'
         from unittest.mock import patch
-        with patch.object(web_ui, '_cleanup_stale_wsl_listen_port'):
+        with patch.object(srv_network, '_cleanup_stale_wsl_listen_port'):
             server, actual = real_create('127.0.0.1', 0)
         servers.append(server)
         def serve():
@@ -164,8 +167,8 @@ def test_cli_launcher_preserves_browser_startup_and_cleans_tls():
         server.serve_forever = serve
         return server, actual
     output = io.StringIO()
-    with patch.object(web_ui, 'create_server', create), patch.object(web_ui, 'get_local_lan_ips', return_value=['10.0.0.2']), patch.object(sys, 'argv', ['swararia.server.web_ui.py']), contextlib.redirect_stdout(output):
-        web_ui.main()
+    with patch.object(srv_app, 'create_server', create), patch.object(srv_network, 'get_local_lan_ips', return_value=['10.0.0.2']), patch.object(sys, 'argv', ['swararia']), contextlib.redirect_stdout(output):
+        srv_app.main()
     assert servers[0].secure_remote.listener is None
     assert 'Security PIN' in output.getvalue()
 
@@ -178,7 +181,7 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
     import threading
     from unittest.mock import patch
     from cryptography import x509
-    from swararia.server import web_ui
+    from swararia.server import app as srv_app, hub as srv_hub, network as srv_network
 
     with socket.socket() as s1, socket.socket() as s2:
         s1.bind(('127.0.0.1', 0))
@@ -186,8 +189,8 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
         s2.bind(('127.0.0.1', 0))
         priv_port = s2.getsockname()[1]
 
-    with patch.object(web_ui, '_cleanup_stale_wsl_listen_port'):
-        server, port = web_ui.create_server('127.0.0.1', port=0)
+    with patch.object(srv_network, '_cleanup_stale_wsl_listen_port'):
+        server, port = srv_app.create_server('127.0.0.1', port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     origin = f'http://127.0.0.1:{port}'
@@ -206,9 +209,9 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
 
     try:
         foh_port = port + 1
-        with patch.object(web_ui, 'is_wsl_environment', return_value=True), \
-                patch.object(web_ui, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
-                patch.object(web_ui, 'get_local_lan_ips', return_value=['192.168.18.47']):
+        with patch.object(srv_network, 'is_wsl_environment', return_value=True), \
+                patch.object(srv_network, '_get_linux_internal_ips', return_value=['192.168.85.3']), \
+                patch.object(srv_network, 'get_local_lan_ips', return_value=['192.168.18.47']):
             st, info = local('GET', '/api/native-remote')
             assert st == 200
             assert info['default_bind_ip'] == '192.168.18.47'
@@ -223,7 +226,7 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
             assert st_res == 409 and body_res['code'] == 'wsl_port_reserved'
 
             # Starting with Windows Wi-Fi IP in WSL2 binds loopback internal port & puts Wi-Fi IP in cert SAN.
-            with patch.object(web_ui, '_get_wsl_native_internal_port', return_value=priv_port):
+            with patch.object(srv_network, '_get_wsl_native_internal_port', return_value=priv_port):
                 st_ok, info_ok = local('POST', '/api/native-remote', {
                     'action': 'start', 'bind_ip': '192.168.18.47', 'port': pub_port
                 })
@@ -237,10 +240,10 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
             # Native bridge endpoint must verify localhost/Origin and inspect Windows rules cleanly.
             assert local('GET', '/api/native-remote/wsl-bridge?foo=1')[0] == 404
             assert local('POST', '/api/native-remote/wsl-bridge', {'action': 'status'}, {'Origin': 'http://evil.test'})[0] == 403
-            with patch.object(web_ui, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', pub_port, '127.0.0.1', priv_port)]), \
-                    patch.object(web_ui, '_inspect_windows_firewall_rules', return_value={f'Swararia Android Remote {pub_port}': True}), \
-                    patch.object(web_ui, '_find_windows_sys32_bin', return_value='/fake/curl.exe'), \
-                    patch.object(web_ui, '_verify_windows_tls_reachable', return_value=True):
+            with patch.object(srv_network, '_list_windows_portproxy_rules', return_value=[('0.0.0.0', pub_port, '127.0.0.1', priv_port)]), \
+                    patch.object(srv_network, '_inspect_windows_firewall_rules', return_value={f'Swararia Android Remote {pub_port}': True}), \
+                    patch.object(srv_network, '_find_windows_sys32_bin', return_value='/fake/curl.exe'), \
+                    patch.object(srv_network, '_verify_windows_tls_reachable', return_value=True):
                 st_b, body_b = local('POST', '/api/native-remote/wsl-bridge', {'action': 'status'})
                 assert st_b == 200 and body_b['bridge']['bridge_active'] is True
                 assert body_b['bridge']['public_port'] == pub_port and body_b['bridge']['internal_port'] == priv_port
@@ -255,7 +258,7 @@ def test_wsl2_nat_maps_windows_wifi_ip_avoids_foh_port_and_gates_bridge():
 
 def test_local_request_allowed_accepts_ipv6_loopback_host_with_matching_port():
     from email.message import Message
-    from swararia.server.web_ui import AudioServerHandler
+    from swararia.server.handler import AudioServerHandler
 
     class DummyServer:
         server_address = ('127.0.0.1', 8765)

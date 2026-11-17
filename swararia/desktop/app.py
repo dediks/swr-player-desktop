@@ -50,7 +50,7 @@ if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
 
     subprocess.Popen.__init__ = _quiet_popen_init  # type: ignore[method-assign]
 
-from swararia.server import web_ui
+from swararia.server import app as server_app, hub, network, state
 
 WINDOW_TITLE = "SWARARIA AUDIO LAB — Pro Audio, FOH QC & DSP Workstation"
 DEFAULT_WIDTH = 1360
@@ -144,22 +144,22 @@ def main() -> int:
     local_host = "127.0.0.1"
     preferred_port = 8765
 
-    server, actual_port = web_ui.create_server(bind_host, preferred_port)
+    server, actual_port = server_app.create_server(bind_host, preferred_port)
     url = f"http://{local_host}:{actual_port}"
 
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     wait_for_server(local_host, actual_port, timeout=5.0)
 
-    lan_ips = web_ui.get_local_lan_ips(force_refresh=True)
+    lan_ips = network.get_local_lan_ips(force_refresh=True)
     print("=" * 65)
     print("  SWARARIA AUDIO LAB — DESKTOP APPLICATION MODE")
     print("=" * 65)
     print(f"  Local Workstation Engine : {url}")
     if lan_ips:
         print(f"  FOH Mobile Remote (HP)   : http://{lan_ips[0]}:{actual_port}/player?remote=1")
-        print(f"  FOH Remote Security PIN  : {web_ui.remote_hub.pin}")
-    print(f"  Audio Library Inbox      : {web_ui.INBOX_DIR}")
+        print(f"  FOH Remote Security PIN  : {hub.remote_hub.pin}")
+    print(f"  Audio Library Inbox      : {state.INBOX_DIR}")
     print("=" * 65)
 
     # Attempt 1: Native OS Desktop Window via pywebview

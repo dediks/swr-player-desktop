@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 from swararia.core import audio_manager
 
 
+from swararia.server import handler as srv_handler
+
+
 def test_search_empty_or_whitespace_returns_empty():
     assert audio_manager.search_youtube_music("") == []
     assert audio_manager.search_youtube_music("   ") == []
@@ -279,9 +282,9 @@ def test_search_youtube_music_fallback_to_ytdlp(mock_subproc, mock_urlopen):
 
 
 def test_web_ui_search_handler_success():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.send_json = MagicMock()
 
     with patch("swararia.core.audio_manager.search_youtube_music") as mock_search:
@@ -309,9 +312,9 @@ def test_web_ui_search_handler_success():
 
 
 def test_web_ui_search_handler_empty_query_400():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.send_json = MagicMock()
 
     handler._handle_post_search({"query": "   "})
@@ -322,15 +325,15 @@ def test_web_ui_search_handler_empty_query_400():
 
 
 def test_web_ui_audio_server_handler_timeout_config():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    assert web_ui.AudioServerHandler.timeout >= 60.0
+    assert srv_handler.AudioServerHandler.timeout >= 60.0
 
 
 def test_web_ui_suppresses_request_timed_out_log():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.log_message = MagicMock()
 
     # Request timed out should be suppressed
@@ -343,9 +346,9 @@ def test_web_ui_suppresses_request_timed_out_log():
 
 
 def test_web_ui_csp_allows_youtube_images():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     headers = {}
     handler.send_header = lambda k, v: headers.setdefault(k, v)
 
@@ -461,9 +464,9 @@ def test_get_preview_stream_info_formats_extraction():
 
 
 def test_web_ui_stream_preview_handler():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.client_address = ("127.0.0.1", 12345)
     handler.headers = {}
     handler.path = "/api/stream-preview"
@@ -605,9 +608,9 @@ def test_inspect_playlist_ytdlp_fallback():
 
 
 def test_web_ui_playlist_inspect_handler():
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.client_address = ("127.0.0.1", 12345)
     handler.headers = {}
     handler.send_json = MagicMock()

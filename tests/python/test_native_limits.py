@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_revocation_and_role_downgrade_cancel_queued_and_pending_commands():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote, RemoteError
     hub = RemotePlayerHub()
     remote = SecureRemote(hub)
@@ -35,7 +35,7 @@ def test_revocation_and_role_downgrade_cancel_queued_and_pending_commands():
 
 
 def test_admin_snapshot_marks_session_expired_without_token_poll():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote, RemoteError
     now = [time.time()]
     remote = SecureRemote(RemotePlayerHub(), clock=lambda: now[0])
@@ -60,7 +60,7 @@ def test_admin_snapshot_marks_session_expired_without_token_poll():
 def test_local_request_logging_never_includes_raw_remote_request():
     import contextlib
     import io
-    from swararia.server.web_ui import AudioServerHandler
+    from swararia.server.handler import AudioServerHandler
     handler = AudioServerHandler.__new__(AudioServerHandler)
     handler.path = '/api/native-remote?token=fixture-not-secret'
     output = io.StringIO()
@@ -70,7 +70,7 @@ def test_local_request_logging_never_includes_raw_remote_request():
 
 
 def test_master_reopen_and_heartbeat_gap_never_replay_queued_work():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote
     now = [time.time()]
     hub = RemotePlayerHub()
@@ -89,7 +89,7 @@ def test_master_reopen_and_heartbeat_gap_never_replay_queued_work():
 
 
 def test_consumer_claim_rechecks_device_permission_and_master_before_execution():
-    from swararia.server.web_ui import RemotePlayerHub
+    from swararia.server.hub import RemotePlayerHub
     from swararia.remote.secure_remote import SecureRemote
     remote = SecureRemote(RemotePlayerHub())
     remote.activate()

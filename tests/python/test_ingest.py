@@ -7,6 +7,9 @@ from unittest import mock
 from swararia.core import audio_manager as am  # noqa: E402
 
 
+from swararia.server import handler as srv_handler, state as srv_state
+
+
 def test_youtube_audio_selector_strictly_anti_drc():
     # Every tier in the selector must strictly guard against -drc streams
     tiers = am.YOUTUBE_AUDIO_SELECTOR.split("/")
@@ -207,7 +210,7 @@ def test_web_ui_cookies_endpoint_and_system_status(tmp_path):
     from email.message import Message
     import json
     import time
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler, state as srv_state
 
     fake_cookies = tmp_path / "cookies.txt"
     now_s = int(time.time())
@@ -217,7 +220,7 @@ def test_web_ui_cookies_endpoint_and_system_status(tmp_path):
     hdrs["Host"] = "127.0.0.1:8765"
     hdrs["Origin"] = "http://127.0.0.1:8765"
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.client_address = ("127.0.0.1", 55555)
     handler.server = type("Srv", (), {"server_address": ("127.0.0.1", 8765)})()
     handler.headers = hdrs
@@ -227,7 +230,7 @@ def test_web_ui_cookies_endpoint_and_system_status(tmp_path):
     def _mock_prem(start_url, _path, max_hops=3):
         return (200, '{"LOGGED_IN":true,"IS_SUBSCRIBER":true}', False)
 
-    with mock.patch.object(web_ui, "COOKIES_FILE", fake_cookies), \
+    with mock.patch.object(srv_state, "COOKIES_FILE", fake_cookies), \
             mock.patch.object(am, "_fetch_youtube_html_with_cookies", side_effect=_mock_prem):
         handler._handle_post_cookies({"action": "save", "content": payload_content})
         assert len(sent) == 1
@@ -458,7 +461,7 @@ def test_web_ui_login_routes_enforce_localhost_and_origin(tmp_path):
     from email.message import Message
     import io
     import json
-    from swararia.server import web_ui
+    from swararia.server import handler as srv_handler, state as srv_state
 
     body_bytes = b'{"reset_profile": false}'
     hdrs = Message()
@@ -466,7 +469,7 @@ def test_web_ui_login_routes_enforce_localhost_and_origin(tmp_path):
     hdrs["Content-Type"] = "application/json"
     hdrs["Content-Length"] = str(len(body_bytes))
 
-    handler = web_ui.AudioServerHandler.__new__(web_ui.AudioServerHandler)
+    handler = srv_handler.AudioServerHandler.__new__(srv_handler.AudioServerHandler)
     handler.client_address = ("127.0.0.1", 55555)
     handler.server = type("Srv", (), {"server_address": ("127.0.0.1", 8765)})()
     handler.headers = hdrs
