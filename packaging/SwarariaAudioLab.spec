@@ -3,27 +3,28 @@
 import os
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 project_dir = Path(SPECPATH).resolve().parent  # spec lives in packaging/
 
 # 1. Collect static web UI assets
 datas = [
-    (str(project_dir / "static"), "static"),
+    (str(project_dir / "swararia" / "web" / "static"), "swararia/web/static"),
 ]
 
 binaries = []
 hiddenimports = [
-    "web_ui",
-    "secure_remote",
-    "secure_remote_tls",
-    "audio_manager",
-    "youtube_login",
-    "task_engine",
-    "fs_browser",
-    "splitter_engine",
+    "swararia.server.web_ui",
+    "swararia.remote.secure_remote",
+    "swararia.remote.secure_remote_tls",
+    "swararia.core.audio_manager",
+    "swararia.core.youtube_login",
+    "swararia.core.task_engine",
+    "swararia.core.fs_browser",
+    "swararia.core.splitter_engine",
 ]
+hiddenimports += collect_submodules("swararia")
 
 # Session TLS runtime, including cryptography's native Rust extension. Fail the
 # package preparation if absent; never ship an insecure HTTP fallback.
@@ -63,7 +64,7 @@ for bin_folder in (project_dir / ".vendor" / "bin", project_dir / "bin"):
                 binaries.append((str(item), os.path.join(".vendor", "bin")))
 
 a = Analysis(
-    [str(project_dir / "desktop_app.py")],
+    [str(project_dir / "packaging" / "launcher.py")],
     pathex=[str(project_dir), str(project_dir / ".vendor")],
     binaries=binaries,
     datas=datas,
