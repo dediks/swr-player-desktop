@@ -108,6 +108,39 @@ STREAM_TIERS = {
 # Explicit client + GVS PO-token bypass flag needed for yt-dlp >= 2026.x when using
 # YouTube Music Premium cookies (web_music / web_creator / tv_samsung expose 774 & 141).
 YOUTUBE_PREMIUM_EXTRACTOR_ARGS = "youtube:player_client=web_music,web_creator,tv_samsung,web;formats=missing_pot"
+YOUTUBE_FALLBACK_EXTRACTOR_ARGS = "youtube:player_client=tv_embedded,web_creator,mweb,android_vr,web;formats=missing_pot"
+YTDLP_AUTO_HEAL_COOLDOWN_S = 6.0 * 3600.0
+_LAST_YTDLP_AUTO_HEAL_LOCK = threading.Lock()
+_LAST_YTDLP_AUTO_HEAL_TS: float = 0.0
+
+_PERMANENT_YOUTUBE_FAILURE_MARKERS = (
+    "private video",
+    "video unavailable",
+    "has been removed",
+    "copyright",
+    "not available in your country",
+    "premieres in",
+    "live event will begin",
+)
+_RECOVERABLE_YOUTUBE_ENGINE_MARKERS = (
+    "http error 403",
+    "403: forbidden",
+    "signature",
+    "nsig",
+    "n challenge",
+    "js challenge",
+    "sabr",
+    "po token",
+    "missing_pot",
+    "requested format is not available",
+    "only images are available",
+    "unable to extract",
+    "player api json",
+    "initial data",
+    "sign in to confirm",
+    "reload the page",
+)
+
 _DESKTOP_CHROME_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -115,6 +148,62 @@ _DESKTOP_CHROME_UA = (
 _COOKIES_TIER_CACHE_LOCK = threading.Lock()
 _COOKIES_TIER_CACHE: dict[tuple[str, int, int], tuple[float, dict]] = {}
 _COOKIES_TIER_TTL_S = 300.0
+
+
+def should_attempt_engine_recovery(error_text: str | None) -> bool:
+    """Returns True for YouTube cipher/n-challenge/SABR/PO-token/403 extraction failures."""
+    if not isinstance(error_text, str):
+        return False
+    normalized = error_text.strip().lower()
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _PERMANENT_YOUTUBE_FAILURE_MARKERS):
+        return False
+    return any(marker in normalized for marker in _RECOVERABLE_YOUTUBE_ENGINE_MARKERS)
+
+
+def can_auto_update_ytdlp(last_attempt_ts: float, now_ts: float) -> bool:
+    """Limits automatic yt-dlp upgrades to at most once per YTDLP_AUTO_HEAL_COOLDOWN_S."""
+    return last_attempt_ts <= 0.0 or (now_ts - last_attempt_ts) >= YTDLP_AUTO_HEAL_COOLDOWN_S
+
+
+def try_claim_ytdlp_auto_heal_slot(now_ts: float | None = None) -> bool:
+    """Atomically reserves the auto-heal update slot if cooldown has elapsed."""
+    global _LAST_YTDLP_AUTO_HEAL_TS
+    current = time.monotonic() if now_ts is None else now_ts
+    with _LAST_YTDLP_AUTO_HEAL_LOCK:
+        if not can_auto_update_ytdlp(_LAST_YTDLP_AUTO_HEAL_TS, current):
+            return False
+        _LAST_YTDLP_AUTO_HEAL_TS = current
+        return True
+
+
+def update_ytdlp_preferring_nightly(
+    env: dict[str, str] | None = None,
+    on_log: Callable[[str], None] | None = None,
+) -> bool:
+    """Upgrades yt-dlp favoring Nightly, falling back to Stable, then pip when unfrozen."""
+    log_fn = on_log or (lambda msg: print(msg, flush=True))
+    base_cmd = list(get_ytdlp_base_cmd())
+    candidates: list[tuple[str, list[str]]] = [
+        ("nightly", [*base_cmd, "--update-to", "nightly"]),
+        ("stable", [*base_cmd, "--update-to", "stable"]),
+    ]
+    if not getattr(sys, "frozen", False):
+        candidates.append(
+            ("pip-pre", [sys.executable, "-m", "pip", "install", "-U", "--pre", "yt-dlp[default]", "yt-dlp-ejs"])
+        )
+
+    for label, cmd in candidates:
+        try:
+            proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+            if proc.returncode == 0:
+                log_fn(f"[ENGINE AUTO-HEAL] Pembaruan yt-dlp ({label}) berhasil.")
+                return True
+        except Exception:
+            continue
+    log_fn("[ENGINE AUTO-HEAL] Pembaruan yt-dlp gagal atau tidak tersedia; melanjutkan dengan klien cadangan.")
+    return False
 
 
 def describe_format_tier(format_id: str) -> str:
@@ -126,8 +215,16 @@ def describe_format_tier(format_id: str) -> str:
     return f"[STREAM TIER] Format {clean_id}: Audio stream terpilih"
 
 
+def _prepend_bin_to_env(env: dict[str, str], extra_bins: list[str], binary_path: str) -> None:
+    bin_dir = str(Path(binary_path).parent)
+    if bin_dir not in extra_bins:
+        extra_bins.insert(0, bin_dir)
+    if extra_bins:
+        env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
+
+
 def find_js_runtime() -> tuple[str | None, dict[str, str]]:
-    """Finds Node.js or Bun runtime (including NVM / ~/.bun) and returns (runtime_spec, env)."""
+    """Finds Node.js, Bun, Deno, or QuickJS runtime and returns (runtime_spec, env)."""
     env = os.environ.copy()
     extra_bins: list[str] = []
     local_bin = Path.home() / ".local" / "bin"
@@ -139,13 +236,8 @@ def find_js_runtime() -> tuple[str | None, dict[str, str]]:
         nvm_nodes = sorted(Path.home().glob(".nvm/versions/node/*/bin/node"), reverse=True)
         if nvm_nodes:
             node_bin = str(nvm_nodes[0])
-
     if node_bin:
-        node_dir = str(Path(node_bin).parent)
-        if node_dir not in extra_bins:
-            extra_bins.insert(0, node_dir)
-        if extra_bins:
-            env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
+        _prepend_bin_to_env(env, extra_bins, node_bin)
         return f"node:{node_bin}", env
 
     bun_bin = shutil.which("bun")
@@ -153,14 +245,23 @@ def find_js_runtime() -> tuple[str | None, dict[str, str]]:
         cand_bun = Path.home() / ".bun" / "bin" / "bun"
         if cand_bun.is_file():
             bun_bin = str(cand_bun)
-
     if bun_bin:
-        bun_dir = str(Path(bun_bin).parent)
-        if bun_dir not in extra_bins:
-            extra_bins.insert(0, bun_dir)
-        if extra_bins:
-            env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
+        _prepend_bin_to_env(env, extra_bins, bun_bin)
         return f"bun:{bun_bin}", env
+
+    deno_bin = shutil.which("deno")
+    if not deno_bin:
+        cand_deno = Path.home() / ".deno" / "bin" / "deno"
+        if cand_deno.is_file():
+            deno_bin = str(cand_deno)
+    if deno_bin:
+        _prepend_bin_to_env(env, extra_bins, deno_bin)
+        return f"deno:{deno_bin}", env
+
+    qjs_bin = shutil.which("qjs")
+    if qjs_bin:
+        _prepend_bin_to_env(env, extra_bins, qjs_bin)
+        return f"quickjs:{qjs_bin}", env
 
     if extra_bins:
         env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
@@ -250,6 +351,7 @@ def run_ytdlp_process(
     skipped_files: list[str] = []
     last_error_line = ""
     cookie_err_detected = False
+    engine_signal_detected = False
     playlist_item = 1
     playlist_total = 1
     vid_map = existing_by_vid or {}
@@ -270,9 +372,10 @@ def run_ytdlp_process(
             if not clean_line:
                 continue
             log_fn(clean_line)
+            lower_line = clean_line.lower()
 
             if any(
-                k in clean_line.lower()
+                k in lower_line
                 for k in (
                     "could not copy",
                     "cookie database",
@@ -283,6 +386,9 @@ def run_ytdlp_process(
                 )
             ):
                 cookie_err_detected = True
+
+            if any(m in lower_line for m in _RECOVERABLE_YOUTUBE_ENGINE_MARKERS):
+                engine_signal_detected = True
 
             if "ERROR:" in clean_line:
                 last_error_line = clean_line.split("ERROR:", 1)[-1].strip()
@@ -328,11 +434,21 @@ def run_ytdlp_process(
                         pass
 
     returncode = proc.wait()
+    last_lower = last_error_line.lower()
+    has_permanent = any(m in last_lower for m in _PERMANENT_YOUTUBE_FAILURE_MARKERS)
+    engine_recovery_needed = bool(
+        returncode != 0
+        and (
+            should_attempt_engine_recovery(last_error_line)
+            or (engine_signal_detected and not has_permanent)
+        )
+    )
     return {
         "returncode": returncode,
         "skipped_files": skipped_files,
         "last_error_line": last_error_line,
         "cookie_err_detected": cookie_err_detected,
+        "engine_recovery_needed": engine_recovery_needed,
     }
 
 
@@ -665,6 +781,7 @@ def build_ytdlp_command(
     cookie_browser: str | None = None,
     js_runtime: str | None = None,
     premium_active: bool | None = None,
+    fallback_clients: bool = False,
 ) -> tuple[list[str], str]:
     """Builds the yt-dlp command list and a human-readable target description."""
     norm_format = "opus" if audio_format in ("opus", "premium", "premium_aac") else audio_format
@@ -744,6 +861,8 @@ def build_ytdlp_command(
 
     if effective_premium:
         cmd.extend(["--extractor-args", YOUTUBE_PREMIUM_EXTRACTOR_ARGS])
+    elif fallback_clients:
+        cmd.extend(["--extractor-args", YOUTUBE_FALLBACK_EXTRACTOR_ARGS])
 
     opus_note = " + Simpan File Asli Opus (.webm)" if keep_opus else ""
     if norm_format == "opus":
@@ -832,7 +951,8 @@ def download(args) -> int:
     print(target_desc, flush=True)
 
     before_files = set(p for p in folder.rglob("*") if p.is_file())
-    returncode = _run_ytdlp_with_tier_log(cmd, env=run_env)
+    run_res = run_ytdlp_process(cmd, env=run_env)
+    returncode = run_res["returncode"]
     if returncode != 0 and (browser or cookies_file.is_file()):
         print("[AUTH FALLBACK] Percobaan dengan cookies gagal. Mencoba ulang mode publik...", flush=True)
         fallback_cmd, _ = build_ytdlp_command(
@@ -847,7 +967,32 @@ def download(args) -> int:
             js_runtime=js_runtime,
             premium_active=False,
         )
-        returncode = _run_ytdlp_with_tier_log(fallback_cmd, env=run_env)
+        run_res = run_ytdlp_process(fallback_cmd, env=run_env)
+        returncode = run_res["returncode"]
+
+    if returncode != 0 and run_res.get("engine_recovery_needed"):
+        print(
+            "[ENGINE AUTO-HEAL] Terdeteksi perubahan enkripsi/anti-bot YouTube. Memperbarui yt-dlp & mengulang dengan klien cadangan...",
+            flush=True,
+        )
+        if try_claim_ytdlp_auto_heal_slot():
+            update_ytdlp_preferring_nightly(env=run_env)
+        recovery_cmd, recovery_desc = build_ytdlp_command(
+            url=args.url,
+            output_template=template,
+            archive_file=archive,
+            audio_format=selected_format,
+            keep_opus=keep_opus,
+            is_playlist=bool(args.playlist),
+            cookies_file=None,
+            cookie_browser=None,
+            js_runtime=js_runtime,
+            premium_active=False,
+            fallback_clients=True,
+        )
+        print(recovery_desc, flush=True)
+        run_res = run_ytdlp_process(recovery_cmd, env=run_env)
+        returncode = run_res["returncode"]
 
     if returncode != 0:
         return returncode

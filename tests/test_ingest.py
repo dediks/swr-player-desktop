@@ -494,6 +494,121 @@ def test_web_ui_login_routes_enforce_localhost_and_origin(tmp_path):
     assert sent[0][0] == 200 and sent[0][1]["ok"] is True
 
 
+def test_engine_recovery_classification_and_fallback_extractor_args(tmp_path):
+    from types import SimpleNamespace
+
+    for msg in (
+        "ERROR: [youtube] dQw4w9WgXcQ: Signature extraction failed",
+        "ERROR: nsig extraction failed: Some formats may be missing",
+        "WARNING: YouTube is forcing SABR streaming",
+        "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+        "ERROR: Requested format is not available. Missing_pot",
+        "ERROR: Sign in to confirm you're not a bot",
+        "ERROR: Unable to extract player API JSON",
+    ):
+        assert am.should_attempt_engine_recovery(msg) is True, msg
+
+    for msg in (
+        None,
+        "",
+        "   ",
+        "ERROR: Private video. Sign in if you've been granted access",
+        "ERROR: Video unavailable. This video has been removed",
+        "ERROR: blocked it on copyright grounds",
+        "ERROR: Network timed out",
+    ):
+        assert am.should_attempt_engine_recovery(msg) is False, str(msg)
+
+    assert am.can_auto_update_ytdlp(0.0, 100.0) is True
+    assert am.can_auto_update_ytdlp(100.0, 100.0 + am.YTDLP_AUTO_HEAL_COOLDOWN_S - 1.0) is False
+    assert am.can_auto_update_ytdlp(100.0, 100.0 + am.YTDLP_AUTO_HEAL_COOLDOWN_S) is True
+
+    archive = tmp_path / "downloaded_ids.txt"
+    cmd_fb, _ = am.build_ytdlp_command(
+        "https://music.youtube.com/watch?v=qmOLtTGvsbM",
+        "out",
+        archive,
+        "opus",
+        fallback_clients=True,
+    )
+    assert "--remote-components" in cmd_fb
+    assert cmd_fb[cmd_fb.index("--remote-components") + 1] == "ejs:github"
+    assert "--extractor-args" in cmd_fb
+    assert "tv_embedded" in cmd_fb[cmd_fb.index("--extractor-args") + 1]
+    assert "formats=missing_pot" in cmd_fb[cmd_fb.index("--extractor-args") + 1]
+
+    seen_cmds = []
+
+    def _fake_run(cmd, env=None, capture_output=True, text=True, timeout=120):
+        seen_cmds.append(cmd)
+        if "--update-to" in cmd and "nightly" in cmd:
+            return SimpleNamespace(returncode=1)
+        return SimpleNamespace(returncode=0)
+
+    with mock.patch.object(am.subprocess, "run", side_effect=_fake_run):
+        assert am.update_ytdlp_preferring_nightly() is True
+    assert len(seen_cmds) == 2
+    assert "nightly" in seen_cmds[0] and "stable" in seen_cmds[1]
+
+
+def test_download_triggers_auto_heal_and_fallback_clients_on_recoverable_failure(tmp_path):
+    import argparse
+    import os
+
+    out_dir = tmp_path / "work" / "inbox"
+    recorded_cmds = []
+
+    def _fake_process(cmd, env=None, existing_by_vid=None, on_log=None, on_progress=None):
+        recorded_cmds.append(cmd)
+        if len(recorded_cmds) == 1:
+            return {
+                "returncode": 1,
+                "skipped_files": [],
+                "last_error_line": "ERROR: HTTP Error 403: Forbidden",
+                "cookie_err_detected": False,
+                "engine_recovery_needed": True,
+            }
+        return {
+            "returncode": 0,
+            "skipped_files": [],
+            "last_error_line": "",
+            "cookie_err_detected": False,
+            "engine_recovery_needed": False,
+        }
+
+    args = argparse.Namespace(
+        url="https://www.youtube.com/watch?v=BaW_jenozKc",
+        folder=str(out_dir),
+        format="opus",
+        keep_opus=False,
+        playlist=False,
+        cookies_from_browser=None,
+        authorized=True,
+        scan=False,
+    )
+
+    orig_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        with mock.patch.object(am, "require"), \
+                mock.patch.object(am, "sync_download_archive", return_value=0), \
+                mock.patch.object(am, "run_ytdlp_process", side_effect=_fake_process), \
+                mock.patch.object(am, "try_claim_ytdlp_auto_heal_slot", return_value=True) as mock_claim, \
+                mock.patch.object(am, "update_ytdlp_preferring_nightly", return_value=True) as mock_update, \
+                mock.patch.object(am.shutil, "which", return_value=None):
+            rc = am.download(args)
+    finally:
+        os.chdir(orig_cwd)
+
+    assert rc == 0
+    assert len(recorded_cmds) == 2
+    mock_claim.assert_called_once()
+    mock_update.assert_called_once()
+    assert "--extractor-args" not in recorded_cmds[0]
+    assert "--extractor-args" in recorded_cmds[1]
+    assert "android_vr" in recorded_cmds[1][recorded_cmds[1].index("--extractor-args") + 1]
+
+
 
 
 

@@ -852,6 +852,7 @@ class TaskQueueManager:
         final_code = 0
         skipped_files: list[str] = []
         last_error_line = ""
+        last_run_res: dict | None = None
 
         for try_idx, with_cookies in enumerate(attempts):
             cookies_path_for_try = self.cookies_file if (with_cookies and self.cookies_file.is_file()) else None
@@ -900,6 +901,7 @@ class TaskQueueManager:
                     on_log=lambda msg: self.append_log(task, msg),
                     on_progress=lambda pct: task.__setitem__("progress", pct),
                 )
+                last_run_res = run_res
                 skipped_files = run_res["skipped_files"]
                 last_error_line = run_res["last_error_line"]
                 if run_res["returncode"] == 0:
@@ -916,6 +918,54 @@ class TaskQueueManager:
                 if with_cookies and len(attempts) > try_idx + 1:
                     continue
                 break
+
+        if not success and (
+            (last_run_res and last_run_res.get("engine_recovery_needed"))
+            or audio_manager.should_attempt_engine_recovery(last_error_line)
+        ):
+            self.append_log(
+                task,
+                "[ENGINE AUTO-HEAL] Terdeteksi perubahan enkripsi/anti-bot YouTube. Memperbarui yt-dlp & mengulang dengan rotasi klien cadangan...",
+            )
+            if audio_manager.try_claim_ytdlp_auto_heal_slot():
+                audio_manager.update_ytdlp_preferring_nightly(
+                    env=run_env,
+                    on_log=lambda msg: self.append_log(task, msg),
+                )
+            recovery_cmd, recovery_desc = audio_manager.build_ytdlp_command(
+                url=url,
+                output_template=template,
+                archive_file=self.archive_file,
+                audio_format=audio_format,
+                keep_opus=keep_opus,
+                is_playlist=is_playlist,
+                cookies_file=None,
+                cookie_browser=None,
+                js_runtime=js_runtime,
+                premium_active=False,
+                fallback_clients=True,
+            )
+            self.append_log(task, recovery_desc)
+            try:
+                rec_res = audio_manager.run_ytdlp_process(
+                    recovery_cmd,
+                    env=run_env,
+                    existing_by_vid=existing_by_vid,
+                    on_log=lambda msg: self.append_log(task, msg),
+                    on_progress=lambda pct: task.__setitem__("progress", pct),
+                )
+                if rec_res["skipped_files"]:
+                    skipped_files = rec_res["skipped_files"]
+                if rec_res["returncode"] == 0:
+                    success = True
+                    last_error_line = ""
+                else:
+                    final_code = rec_res["returncode"]
+                    last_error_line = rec_res["last_error_line"] or last_error_line
+            except Exception as proc_exc:
+                self.append_log(task, f"Recovery execution error: {proc_exc}")
+                last_error_line = str(proc_exc)
+                final_code = 1
 
         downloaded_files_after = set(p for p in self.inbox_dir.rglob("*") if p.is_file())
         new_files = sorted(
