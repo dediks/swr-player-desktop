@@ -4,7 +4,7 @@ const uri = text => 'data:text/javascript;base64,' + Buffer.from(text).toString(
 const icons = uri(fs.readFileSync(new URL('../../swararia/web/static/modules/dom-icons.js', import.meta.url), 'utf8'));
 const source = fs.readFileSync(new URL('../../swararia/web/static/modules/native-remote-admin.js', import.meta.url), 'utf8').replace("'./dom-icons.js'", JSON.stringify(icons));
 const { initNativeRemoteAdmin } = await import(uri(source));
-const html = fs.readFileSync(new URL('../../swararia/web/static/player.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../../swararia/web/static/pages/player/index.html', import.meta.url), 'utf8');
 class Element {
   textContent = ''; value = ''; disabled = false; children = []; listeners = {}; open = false; dataset = {}; attributes = {}; style = {};
   constructor(attrs = '') {
@@ -149,8 +149,8 @@ test('approved composition reuses scoped styles and safe original SVG factory', 
   const h = harness(); await h.admin.refresh();
   assert.ok(h.el('nativeTitleIcon').children.length > 0);
   assert.ok(h.el('nativeHeroIcon').children.length > 0);
-  const css = fs.readFileSync(new URL('../../swararia/web/static/native-remote.css', import.meta.url), 'utf8');
-  assert.ok(html.includes('href="/static/native-remote.css"'));
+  const css = fs.readFileSync(new URL('../../swararia/web/static/css/native-remote.css', import.meta.url), 'utf8');
+  assert.ok(html.includes('href="/static/css/native-remote.css"'));
   assert.ok(css.includes('var(--font-heading)'));
   assert.ok(css.includes('var(--accent-amber)'));
   for (const rule of css.replace(/\/\*[\s\S]*?\*\//g,'').split('{').slice(0,-1)) {
@@ -213,7 +213,7 @@ test('pairing has one manual disclosure and compact invitation actions', async (
   assert.equal(visible(h.el('nativeInviteStatus')), false, 'normal pairing must not repeat a technical paragraph');
   await click(h.el('nativeShowCode'));
   assert.equal(h.el('nativeManual').open,true); assert.equal(h.el('nativeShowCode').attributes['aria-expanded'],'true');
-  const css=fs.readFileSync(new URL('../../swararia/web/static/native-remote.css',import.meta.url),'utf8');
+  const css=fs.readFileSync(new URL('../../swararia/web/static/css/native-remote.css',import.meta.url),'utf8');
   assert.match(css, /#androidRemoteModal #nativeManual\s*>\s*summary\s*\{\s*display:\s*none/,'do not show a duplicate manual-code trigger');
 });
 test('wsl2 defaults, bridge status banner and manual port reservation work cleanly', async () => {

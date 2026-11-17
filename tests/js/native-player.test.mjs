@@ -82,7 +82,7 @@ console.log('PASS native player: observed play/pause/stop/fade_out, rejection, n
 
 // Execute the actual polling function, not a source-string assertion.
 const vm = await import('node:vm');
-const player = fs.readFileSync(new URL('../../swararia/web/static/player.js', import.meta.url), 'utf8');
+const player = fs.readFileSync(new URL('../../swararia/web/static/pages/player/index.js', import.meta.url), 'utf8');
 const polling = player.slice(player.indexOf('  let isMasterSyncInFlight = false;'), player.indexOf('  function applyMasterStateToRemoteUI('));
 const sent = [];
 const claims = [];

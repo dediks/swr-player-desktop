@@ -123,7 +123,7 @@ def test_simulated_lan_socket_keeps_browser_allowlist_but_cannot_forge_native_ow
         assert req('GET', '/api/remote/state', headers=forged)[0] == 200
         assert req('POST', '/api/remote/command', {'action': 'play'}, forged)[0] == 200
         # Consume HTML/static without JSON decoding using a real loopback socket.
-        for path, expected in [('/', 302), ('/index.html', 302), ('/player', 200), ('/player.html', 200), ('/static/player.js', 200), ('/api/library', 200), ('/api/system', 200)]:
+        for path, expected in [('/', 302), ('/index.html', 302), ('/player', 200), ('/player.html', 200), ('/static/pages/player/index.js', 200), ('/api/library', 200), ('/api/system', 200)]:
             conn = http.client.HTTPConnection('127.0.0.1', server.server_address[1], timeout=4)
             conn.request('GET', path, headers=forged)
             response = conn.getresponse()
@@ -149,11 +149,11 @@ def test_browser_reset_and_disconnect_all_only_clear_browser_commands():
 def test_original_browser_modal_and_setup_block_have_exact_20702751_parity():
     import hashlib
     root = Path(__file__).resolve().parents[2]
-    html = (root / 'swararia/web/static/player.html').read_text()
+    html = (root / 'swararia/web/static/pages/player/index.html').read_text()
     start = html.index('  <div class="modal-backdrop hidden" id="remoteModal"')
     end = html.index('\n  </div>', start) + len('\n  </div>')
     assert hashlib.sha256(html[start:end].encode()).hexdigest() == '3a9202971f1ee48085253ce3c8c966ef47b153d9e55cca5af65c41628953de7d'
-    js = (root / 'swararia/web/static/player.js').read_text()
+    js = (root / 'swararia/web/static/pages/player/index.js').read_text()
     block = js[js.index('  let currentRemoteServerPort'):js.index('  const androidRemoteModal =')]
     assert hashlib.sha256(block.encode()).hexdigest() == 'd133d73f3229f09bafcaca737ec3c103bcbe18cdebc33fb2c059a082845712c2'
     import re
@@ -163,10 +163,10 @@ def test_original_browser_modal_and_setup_block_have_exact_20702751_parity():
 
 
 def test_native_dialog_connect_form_wraps_without_changing_browser_modal():
-    html = (Path(__file__).resolve().parents[2] / 'swararia/web/static/player.html').read_text()
+    html = (Path(__file__).resolve().parents[2] / 'swararia/web/static/pages/player/index.html').read_text()
     native = html[html.index('id="androidRemoteModal"'):]
-    css = (Path(__file__).resolve().parents[2] / 'swararia/web/static/native-remote.css').read_text()
-    assert 'href="/static/native-remote.css"' in html
+    css = (Path(__file__).resolve().parents[2] / 'swararia/web/static/css/native-remote.css').read_text()
+    assert 'href="/static/css/native-remote.css"' in html
     assert 'id="nativeSettings"' in native and 'class="native-fields"' in native
     assert '#androidRemoteModal .native-fields { display:grid;' in css
     assert 'grid-template-columns:minmax(0,1fr) 110px' in css

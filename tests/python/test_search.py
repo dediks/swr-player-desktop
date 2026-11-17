@@ -418,7 +418,7 @@ def test_format_item_subtitle_deduplication():
         return
     script = """
     import fs from 'fs';
-    const code = fs.readFileSync('swararia/web/static/app.js', 'utf8');
+    const code = fs.readFileSync('swararia/web/static/pages/ingest/index.js', 'utf8');
     const fnMatch = code.match(/function formatItemSubtitle[\\s\\S]*?\\n}/);
     if (!fnMatch) throw new Error('formatItemSubtitle not found');
     const fn = new Function(`${fnMatch[0]}; return formatItemSubtitle;`)();

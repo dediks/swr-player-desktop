@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const player = fs.readFileSync('swararia/web/static/player.js', 'utf8');
-const html = fs.readFileSync('swararia/web/static/player.html', 'utf8');
+const player = fs.readFileSync('swararia/web/static/pages/player/index.js', 'utf8');
+const html = fs.readFileSync('swararia/web/static/pages/player/index.html', 'utf8');
 assert.match(html, /id="btnOpenAndroidRemoteModal"/, 'Android needs a separate affordance');
 assert.match(html, /id="remoteMasterSetupPanel"/);
 assert.match(html, /id="remoteClientPinPanel"/);

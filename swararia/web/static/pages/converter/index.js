@@ -23,8 +23,8 @@ import {
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
-} from './modules/ui-shared.js';
-import { initFolderModal } from './modules/folder-modal.js';
+} from '../../modules/ui-shared.js';
+import { initFolderModal } from '../../modules/folder-modal.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const playlistGrid = document.getElementById('playlistGrid');

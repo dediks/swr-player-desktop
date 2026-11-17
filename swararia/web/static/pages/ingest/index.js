@@ -19,7 +19,7 @@ import {
   createQueueMonitor,
   openFolderInExplorer,
   applyCookieStatusUI,
-} from './modules/ui-shared.js';
+} from '../../modules/ui-shared.js';
 
 const STAGING_KEY = 'ingest_staging_v1';
 const SETTINGS_KEY = 'ingest_settings_v1';

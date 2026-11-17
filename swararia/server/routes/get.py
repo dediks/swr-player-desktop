@@ -69,19 +69,19 @@ class GetRoutesMixin:
             return
 
         if path in ("/", "/index.html"):
-            self.serve_file(state.STATIC_DIR / "index.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "ingest" / "index.html", "text/html; charset=utf-8")
         elif path in ("/qc", "/qc.html"):
-            self.serve_file(state.STATIC_DIR / "qc.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "qc" / "index.html", "text/html; charset=utf-8")
         elif path in ("/converter", "/converter.html"):
-            self.serve_file(state.STATIC_DIR / "converter.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "converter" / "index.html", "text/html; charset=utf-8")
         elif path in ("/organizer", "/organizer.html"):
-            self.serve_file(state.STATIC_DIR / "organizer.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "organizer" / "index.html", "text/html; charset=utf-8")
         elif path in ("/multitrack", "/multitrack.html", "/splitter", "/splitter.html"):
-            self.serve_file(state.STATIC_DIR / "multitrack.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "multitrack" / "index.html", "text/html; charset=utf-8")
         elif path in ("/video-split", "/video-split.html", "/videosplit", "/videosplit.html"):
-            self.serve_file(state.STATIC_DIR / "video-split.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "video-split" / "index.html", "text/html; charset=utf-8")
         elif path in ("/player", "/player.html"):
-            self.serve_file(state.STATIC_DIR / "player.html", "text/html; charset=utf-8")
+            self.serve_file(state.STATIC_DIR / "pages" / "player" / "index.html", "text/html; charset=utf-8")
         elif path.startswith("/static/"):
             rel_path = path[len("/static/"):]
             safe_file = (state.STATIC_DIR / rel_path).resolve()

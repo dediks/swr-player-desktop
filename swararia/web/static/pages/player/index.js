@@ -17,11 +17,11 @@ import {
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
-} from './modules/ui-shared.js';
-import { initFolderModal } from './modules/folder-modal.js';
-import { renderQrToCanvas } from './modules/qr-code.js';
-import { createNativeCommandConsumer } from './modules/native-remote-player.js';
-import { initNativeRemoteAdmin } from './modules/native-remote-admin.js';
+} from '../../modules/ui-shared.js';
+import { initFolderModal } from '../../modules/folder-modal.js';
+import { renderQrToCanvas } from '../../modules/qr-code.js';
+import { createNativeCommandConsumer } from '../../modules/native-remote-player.js';
+import { initNativeRemoteAdmin } from '../../modules/native-remote-admin.js';
 
 const CUE_PADS_STORAGE_KEY = 'swararia_foh_cue_pads_v1';
 const PLAYER_PREFS_STORAGE_KEY = 'swararia_foh_player_prefs_v1';

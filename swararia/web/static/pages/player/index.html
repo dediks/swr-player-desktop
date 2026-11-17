@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="SWARARIA AUDIO LAB - Stage 7: FOH Live Player, Soundcheck RTA & Instant Cue Deck">
   <title>SWARARIA AUDIO LAB // 7. FOH Live Player &amp; Cue Deck</title>
-  <link rel="icon" type="image/jpeg" href="/static/swararia-logo.jpg">
+  <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/converter.css">
-  <link rel="stylesheet" href="/static/player.css">
-  <link rel="stylesheet" href="/static/native-remote.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/converter.css">
+  <link rel="stylesheet" href="/static/css/player.css">
+  <link rel="stylesheet" href="/static/css/native-remote.css">
 </head>
 <body class="dark-theme" data-page="player">
   <header class="app-header" id="appHeader" data-page="player"></header>
@@ -711,7 +711,7 @@
   <!-- Hidden HTML5 Audio Element (Routed through Web Audio API Graph) -->
   <audio id="fohAudioElement" preload="metadata" crossorigin="anonymous"></audio>
 
-  <script type="module" src="/static/player.js"></script>
+  <script type="module" src="/static/pages/player/index.js"></script>
   <div class="modal-backdrop hidden" id="androidRemoteModal" role="dialog" aria-modal="true" aria-labelledby="androidRemoteModalTitle">
     <div class="modal-card remote-modal-card">
       <div class="modal-header remote-modal-header">

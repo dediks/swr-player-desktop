@@ -4,9 +4,9 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const root = path.resolve(import.meta.dirname, '../..');
-const playerJs = fs.readFileSync(path.join(root, 'swararia/web/static/player.js'), 'utf8');
-const playerHtml = fs.readFileSync(path.join(root, 'swararia/web/static/player.html'), 'utf8');
-const appJs = fs.readFileSync(path.join(root, 'swararia/web/static/app.js'), 'utf8');
+const playerJs = fs.readFileSync(path.join(root, 'swararia/web/static/pages/player/index.js'), 'utf8');
+const playerHtml = fs.readFileSync(path.join(root, 'swararia/web/static/pages/player/index.html'), 'utf8');
+const appJs = fs.readFileSync(path.join(root, 'swararia/web/static/pages/ingest/index.js'), 'utf8');
 
 function extractBlock(startMarker, endMarker) {
   const start = playerJs.indexOf(startMarker);

@@ -12,8 +12,8 @@ import {
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
-} from './modules/ui-shared.js';
-import { initFolderModal } from './modules/folder-modal.js';
+} from '../../modules/ui-shared.js';
+import { initFolderModal } from '../../modules/folder-modal.js';
 
 function formatTimeMMSS(seconds) {
   const sec = Math.max(0, Number(seconds) || 0);

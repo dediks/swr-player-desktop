@@ -7,22 +7,22 @@ import { initAppHeader } from './ui-shared.js';
 import { ensureFohAudioElement, initPersistentDock } from './persistent-dock.js';
 
 const ROUTE_CONFIG = {
-  '/': { key: 'ingest', script: 'app.js', title: 'SWARARIA AUDIO LAB // 1. Batch Audio Ingestion', css: 'ingest.css' },
-  '/index.html': { key: 'ingest', script: 'app.js', title: 'SWARARIA AUDIO LAB // 1. Batch Audio Ingestion', css: 'ingest.css' },
-  '/qc': { key: 'qc', script: 'qc.js', title: 'SWARARIA AUDIO LAB // 2. Soundsystem QC & Spectral Lab' },
-  '/qc.html': { key: 'qc', script: 'qc.js', title: 'SWARARIA AUDIO LAB // 2. Soundsystem QC & Spectral Lab' },
-  '/converter': { key: 'converter', script: 'converter.js', title: 'SWARARIA AUDIO LAB // 3. Sample Rate & Playlist Converter' },
-  '/converter.html': { key: 'converter', script: 'converter.js', title: 'SWARARIA AUDIO LAB // 3. Sample Rate & Playlist Converter' },
-  '/organizer': { key: 'organizer', script: 'organizer.js', title: 'SWARARIA AUDIO LAB // 4. Tag & File Organizer' },
-  '/organizer.html': { key: 'organizer', script: 'organizer.js', title: 'SWARARIA AUDIO LAB // 4. Tag & File Organizer' },
-  '/multitrack': { key: 'multitrack', script: 'multitrack.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'splitter.css' },
-  '/multitrack.html': { key: 'multitrack', script: 'multitrack.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'splitter.css' },
-  '/splitter': { key: 'multitrack', script: 'multitrack.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'splitter.css' },
-  '/splitter.html': { key: 'multitrack', script: 'multitrack.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'splitter.css' },
-  '/video-split': { key: 'video-split', script: 'video-split.js', title: 'SWARARIA AUDIO LAB // 6. Long Video Splitter', css: 'splitter.css' },
-  '/video-split.html': { key: 'video-split', script: 'video-split.js', title: 'SWARARIA AUDIO LAB // 6. Long Video Splitter', css: 'splitter.css' },
-  '/player': { key: 'player', script: 'player.js', title: 'SWARARIA AUDIO LAB // 7. FOH Live Player & Cue Deck', css: ['converter.css', 'player.css', 'native-remote.css'] },
-  '/player.html': { key: 'player', script: 'player.js', title: 'SWARARIA AUDIO LAB // 7. FOH Live Player & Cue Deck', css: ['converter.css', 'player.css', 'native-remote.css'] },
+  '/': { key: 'ingest', script: 'pages/ingest/index.js', title: 'SWARARIA AUDIO LAB // 1. Batch Audio Ingestion', css: 'css/ingest.css' },
+  '/index.html': { key: 'ingest', script: 'pages/ingest/index.js', title: 'SWARARIA AUDIO LAB // 1. Batch Audio Ingestion', css: 'css/ingest.css' },
+  '/qc': { key: 'qc', script: 'pages/qc/index.js', title: 'SWARARIA AUDIO LAB // 2. Soundsystem QC & Spectral Lab' },
+  '/qc.html': { key: 'qc', script: 'pages/qc/index.js', title: 'SWARARIA AUDIO LAB // 2. Soundsystem QC & Spectral Lab' },
+  '/converter': { key: 'converter', script: 'pages/converter/index.js', title: 'SWARARIA AUDIO LAB // 3. Sample Rate & Playlist Converter' },
+  '/converter.html': { key: 'converter', script: 'pages/converter/index.js', title: 'SWARARIA AUDIO LAB // 3. Sample Rate & Playlist Converter' },
+  '/organizer': { key: 'organizer', script: 'pages/organizer/index.js', title: 'SWARARIA AUDIO LAB // 4. Tag & File Organizer' },
+  '/organizer.html': { key: 'organizer', script: 'pages/organizer/index.js', title: 'SWARARIA AUDIO LAB // 4. Tag & File Organizer' },
+  '/multitrack': { key: 'multitrack', script: 'pages/multitrack/index.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'css/splitter.css' },
+  '/multitrack.html': { key: 'multitrack', script: 'pages/multitrack/index.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'css/splitter.css' },
+  '/splitter': { key: 'multitrack', script: 'pages/multitrack/index.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'css/splitter.css' },
+  '/splitter.html': { key: 'multitrack', script: 'pages/multitrack/index.js', title: 'SWARARIA AUDIO LAB // 5. Multitrack & Stem Splitter', css: 'css/splitter.css' },
+  '/video-split': { key: 'video-split', script: 'pages/video-split/index.js', title: 'SWARARIA AUDIO LAB // 6. Long Video Splitter', css: 'css/splitter.css' },
+  '/video-split.html': { key: 'video-split', script: 'pages/video-split/index.js', title: 'SWARARIA AUDIO LAB // 6. Long Video Splitter', css: 'css/splitter.css' },
+  '/player': { key: 'player', script: 'pages/player/index.js', title: 'SWARARIA AUDIO LAB // 7. FOH Live Player & Cue Deck', css: ['css/converter.css', 'css/player.css', 'css/native-remote.css'] },
+  '/player.html': { key: 'player', script: 'pages/player/index.js', title: 'SWARARIA AUDIO LAB // 7. FOH Live Player & Cue Deck', css: ['css/converter.css', 'css/player.css', 'css/native-remote.css'] },
 };
 
 const viewCache = new Map();
@@ -143,7 +143,7 @@ export async function spaNavigate(targetUrl, isPopState = false) {
 
     // 3. Prepare target view
     ensureHeadStylesheet(resolved.config.css);
-    ensureHeadStylesheet('player.css'); // Always ensure player.css for the floating dock
+    ensureHeadStylesheet('css/player.css'); // Always ensure player.css for the floating dock
 
     let targetView = viewCache.get(resolved.path);
 
@@ -240,7 +240,7 @@ export function initSpaRouter() {
 
   // Ensure persistent dock and audio element exist
   ensureFohAudioElement();
-  ensureHeadStylesheet('player.css');
+  ensureHeadStylesheet('css/player.css');
   initPersistentDock();
 
   // Adopt current page into view cache

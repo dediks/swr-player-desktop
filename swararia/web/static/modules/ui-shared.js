@@ -256,7 +256,7 @@ export function initAppHeader(opts = {}) {
   const brandIcon = document.createElement('div');
   brandIcon.className = 'brand-icon';
   const brandLogoImg = document.createElement('img');
-  brandLogoImg.src = '/static/swararia-logo.jpg';
+  brandLogoImg.src = '/static/assets/swararia-logo.jpg';
   brandLogoImg.alt = 'SWARARIA AUDIO LAB';
   brandLogoImg.className = 'brand-logo-img';
   brandIcon.appendChild(brandLogoImg);
