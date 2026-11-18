@@ -185,13 +185,13 @@ Cukup klik ganda file **`packaging/build_installer.bat`**. Script ini akan secar
 # Build desktop app + kompilasi Setup Wizard otomatis:
 python packaging/build_desktop.py --install-deps --installer
 
-# Opsi pembersihan cache sebelum build (rekomendasi pasca update kode):
-python packaging/build_desktop.py --clean --installer
+# Opsi pembersihan cache & gunakan FFmpeg GPL-Shared hemat ukuran (~240 MB lebih kecil):
+python packaging/build_desktop.py --fetch-ffmpeg --clean --installer
 ```
 
 #### 4. Opsi Distribusi:
-- **Installer Wizard (`dist\SwarariaAudioLab_Setup.exe`)**: File setup tunggal (~160 MB). Otomatis membuat shortcut Desktop & Start Menu, izin folder pustaka aman, dan registrasi Uninstaller di *Windows Settings*.
-- **Portable Folder (`dist\SwarariaAudioLab\`)**: Bisa langsung dikompres ke `.zip` untuk dijalankan tanpa instalasi.
+- **Installer Wizard (`dist\SwarariaAudioLab_Setup.exe`)**: File setup tunggal yang dikompresi LZMA2. Otomatis membuat shortcut Desktop & Start Menu, izin folder pustaka aman, dan registrasi Uninstaller di *Windows Settings*.
+- **Portable Folder (`dist\SwarariaAudioLab\`)**: Bisa langsung dikompres ke `.zip` untuk dijalankan tanpa instalasi. Menggunakan build FFmpeg GPL-Shared (`.exe` + `.dll`) dan bytecode `yt_dlp` terdeduplikasi di `PYZ` untuk menghindari duplikasi ratusan megabyte.
 
 ### C. Menjalankan Manual (Mode Developer)
 

@@ -12,10 +12,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 PACKAGING_DIR = Path(__file__).resolve().parent
@@ -23,9 +27,141 @@ BASE_DIR = PACKAGING_DIR.parent  # repository root
 VENDOR_BIN_DIR = BASE_DIR / ".vendor" / "bin"
 DIST_DIR = BASE_DIR / "dist" / "SwarariaAudioLab"
 
+FFMPEG_SHARED_ASSET = "ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
+FFMPEG_SHARED_ARCHIVE_URL = (
+    f"https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/{FFMPEG_SHARED_ASSET}"
+)
+FFMPEG_CHECKSUMS_URL = (
+    "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/checksums.sha256"
+)
+_STATIC_FFMPEG_WARN_BYTES = 80 * 1024 * 1024
+_FFMPEG_SHARED_LIB_PREFIXES = ("avcodec", "avdevice", "avfilter", "avformat", "avutil", "postproc", "swresample", "swscale")
+
+
+def _is_companion_shared_lib(path: Path) -> bool:
+    """Returns True for shared FFmpeg runtime libraries next to ffmpeg/ffprobe."""
+    if not path.is_file():
+        return False
+    lower = path.name.lower()
+    if os.name == "nt":
+        return lower.endswith(".dll")
+    if sys.platform == "darwin":
+        return lower.endswith(".dylib") and any(lower.startswith(f"lib{p}") for p in _FFMPEG_SHARED_LIB_PREFIXES)
+    return ".so" in lower and any(lower.startswith(f"lib{p}") for p in _FFMPEG_SHARED_LIB_PREFIXES)
+
+
+def _copy_companion_shared_libs(src_bin: Path, target_dir: Path, staged: list[Path]) -> None:
+    """Copies sibling FFmpeg shared libraries when staging from a shared FFmpeg install."""
+    for candidate in src_bin.parent.iterdir():
+        if not _is_companion_shared_lib(candidate):
+            continue
+        dest = target_dir / candidate.name
+        if not dest.exists():
+            try:
+                shutil.copy2(candidate, dest)
+                staged.append(dest)
+                print(f"  [OK] Membundel shared lib {candidate.name} -> {dest}")
+            except OSError as exc:
+                print(f"  [WARN] Gagal menyalin {candidate.name}: {exc}")
+
+
+def parse_sha256_checksum(checksum_text: str, asset_name: str) -> str | None:
+    """Extracts the expected SHA-256 hex digest for asset_name from a sha256sum manifest."""
+    for line in checksum_text.splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2 and parts[-1].lstrip("*") == asset_name:
+            digest = parts[0].lower()
+            if len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest):
+                return digest
+    return None
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+
+def extract_shared_ffmpeg_runtime(archive_path: Path, dest_dir: Path) -> list[Path]:
+    """Extracts Windows ffmpeg.exe, ffprobe.exe, and runtime DLLs safely into dest_dir."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="swararia_ffmpeg_") as tmp:
+        tmp_dir = Path(tmp)
+        extracted: list[Path] = []
+        with zipfile.ZipFile(archive_path) as zf:
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                rel = Path(member.filename)
+                if rel.is_absolute() or ".." in rel.parts:
+                    raise ValueError(f"Path tidak aman di arsip FFmpeg: {member.filename}")
+                if "bin" not in rel.parts:
+                    continue
+                name = rel.name
+                lower = name.lower()
+                if lower != "ffmpeg.exe" and lower != "ffprobe.exe" and not lower.endswith(".dll"):
+                    continue
+                out_path = (tmp_dir / name).resolve()
+                if out_path.parent != tmp_dir.resolve():
+                    raise ValueError(f"Path ekstraksi di luar direktori sementara: {member.filename}")
+                with zf.open(member) as src, out_path.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                extracted.append(out_path)
+
+        names_lower = {p.name.lower() for p in extracted}
+        if "ffmpeg.exe" not in names_lower or "ffprobe.exe" not in names_lower:
+            raise RuntimeError("Arsip FFmpeg tidak berisi bin/ffmpeg.exe dan bin/ffprobe.exe.")
+
+        # Remove old monolithic Windows FFmpeg binaries / stale DLLs cleanly while preserving POSIX tools.
+        for old in list(dest_dir.iterdir()):
+            if old.is_file() and (old.name.lower() in ("ffmpeg.exe", "ffprobe.exe", "ffplay.exe") or old.suffix.lower() == ".dll"):
+                old.unlink()
+
+        installed: list[Path] = []
+        for src in sorted(extracted):
+            target = dest_dir / src.name
+            shutil.copy2(src, target)
+            installed.append(target)
+        return installed
+
+
+def _download_https(url: str, dest_path: Path) -> None:
+    if not url.startswith("https://"):
+        raise ValueError(f"Hanya URL HTTPS yang diizinkan: {url}")
+    req = urllib.request.Request(url, headers={"User-Agent": "SwarariaAudioLab-Builder/1.0"})
+    with urllib.request.urlopen(req, timeout=120) as resp, dest_path.open("wb") as out:
+        shutil.copyfileobj(resp, out)
+
+
+def fetch_shared_ffmpeg_windows(dest_dir: Path = VENDOR_BIN_DIR, verify_checksum: bool = True) -> list[Path]:
+    """Downloads FFmpeg-Builds win64-gpl-shared runtime (.exe + .dll) into dest_dir."""
+    print(f"  Mengunduh FFmpeg Shared Windows ({FFMPEG_SHARED_ASSET})...")
+    with tempfile.TemporaryDirectory(prefix="swararia_dl_") as tmp:
+        tmp_dir = Path(tmp)
+        archive_path = tmp_dir / FFMPEG_SHARED_ASSET
+        _download_https(FFMPEG_SHARED_ARCHIVE_URL, archive_path)
+
+        if verify_checksum:
+            checksum_path = tmp_dir / "checksums.sha256"
+            _download_https(FFMPEG_CHECKSUMS_URL, checksum_path)
+            expected = parse_sha256_checksum(checksum_path.read_text(encoding="utf-8"), FFMPEG_SHARED_ASSET)
+            if not expected:
+                raise RuntimeError(f"Checksum SHA-256 untuk {FFMPEG_SHARED_ASSET} tidak ditemukan.")
+            actual = _sha256_file(archive_path)
+            if actual != expected:
+                raise RuntimeError(f"Verifikasi SHA-256 gagal ({actual} != {expected}).")
+            print(f"  [OK] SHA-256 terverifikasi: {actual[:16]}...")
+
+        installed = extract_shared_ffmpeg_runtime(archive_path, dest_dir)
+        total_mb = sum(p.stat().st_size for p in installed) / (1024 * 1024)
+        print(f"  [OK] Terpasang {len(installed)} file runtime FFmpeg Shared di {dest_dir} ({total_mb:.1f} MiB)")
+        return installed
+
 
 def stage_ffmpeg_binaries() -> list[Path]:
-    """Copies system ffmpeg & ffprobe into .vendor/bin/ so PyInstaller bundles them."""
+    """Stages ffmpeg & ffprobe (plus shared libs if applicable) into .vendor/bin/."""
     staged: list[Path] = []
     VENDOR_BIN_DIR.mkdir(parents=True, exist_ok=True)
     exe_suffix = ".exe" if os.name == "nt" else ""
@@ -34,6 +170,12 @@ def stage_ffmpeg_binaries() -> list[Path]:
         target = VENDOR_BIN_DIR / f"{tool}{exe_suffix}"
         if target.is_file():
             staged.append(target)
+            if os.name == "nt" and target.stat().st_size > _STATIC_FFMPEG_WARN_BYTES:
+                mb = target.stat().st_size / (1024 * 1024)
+                print(
+                    f"  [WARN] {target.name} berukuran {mb:.1f} MiB (build statis penuh). "
+                    "Jalankan dengan '--fetch-ffmpeg' untuk memangkas ukuran paket ~240 MB."
+                )
             continue
         sys_bin = shutil.which(tool)
         if sys_bin:
@@ -42,6 +184,7 @@ def stage_ffmpeg_binaries() -> list[Path]:
                 shutil.copy2(src, target)
                 staged.append(target)
                 print(f"  [OK] Membundel {tool} dari {src} -> {target}")
+                _copy_companion_shared_libs(src, VENDOR_BIN_DIR, staged)
             except OSError as exc:
                 print(f"  [WARN] Gagal menyalin {tool}: {exc}")
         else:
@@ -144,6 +287,16 @@ def main() -> int:
         action="store_true",
         help="Otomatis jalankan Inno Setup setelah build untuk membuat file SwarariaAudioLab_Setup.exe.",
     )
+    parser.add_argument(
+        "--fetch-ffmpeg",
+        action="store_true",
+        help="Unduh FFmpeg Windows GPL-Shared terbaru ke .vendor/bin/ untuk memangkas ukuran paket.",
+    )
+    parser.add_argument(
+        "--fetch-ffmpeg-only",
+        action="store_true",
+        help="Hanya unduh/perbarui FFmpeg Shared ke .vendor/bin/ lalu keluar tanpa menjalankan PyInstaller.",
+    )
     args = parser.parse_args()
 
     print("=" * 68)
@@ -157,7 +310,12 @@ def main() -> int:
                 shutil.rmtree(d, ignore_errors=True)
 
     print("\n[1/4] Menyiapkan binary FFmpeg & ffprobe portable...")
-    stage_ffmpeg_binaries()
+    if args.fetch_ffmpeg or args.fetch_ffmpeg_only:
+        fetch_shared_ffmpeg_windows(VENDOR_BIN_DIR)
+        if args.fetch_ffmpeg_only:
+            return 0
+    else:
+        stage_ffmpeg_binaries()
 
     print("\n[2/4] Memeriksa PyInstaller & dependensi build...")
     if not ensure_build_dependencies(auto_install=args.install_deps):
