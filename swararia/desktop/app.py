@@ -57,7 +57,7 @@ DEFAULT_WIDTH = 1360
 DEFAULT_HEIGHT = 860
 MIN_WIDTH = 1024
 MIN_HEIGHT = 640
-BG_COLOR = "#09090b"
+BG_COLOR = "#14161a"
 
 
 def wait_for_server(host: str, port: int, timeout: float = 5.0) -> bool:

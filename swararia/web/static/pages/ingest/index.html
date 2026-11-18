@@ -6,9 +6,6 @@
   <meta name="description" content="SWARARIA AUDIO LAB - Stage 1: Batch Audio Ingestion & Stream Extraction">
   <title>SWARARIA AUDIO LAB // 1. Batch Audio Ingestion</title>
   <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/player.css">
   <link rel="stylesheet" href="/static/css/native-remote.css">
@@ -163,7 +160,7 @@
                 </div>
                 <div class="ing-preview-actions">
                   <button type="button" id="btnPreviewStage" class="ing-preview-action-btn ing-preview-stage-btn" title="Tambah ke antrean unduhan">+ Antrean</button>
-                  <button type="button" id="btnPreviewDownloadNow" class="ing-preview-action-btn ing-preview-now-btn" title="Unduh sekarang">⚡ Unduh</button>
+                  <button type="button" id="btnPreviewDownloadNow" class="ing-preview-action-btn ing-preview-now-btn" title="Unduh sekarang">Unduh</button>
                   <a id="btnPreviewExternal" href="#" target="_blank" rel="noopener noreferrer" class="ing-icon-btn ing-preview-ext-btn" title="Buka di YouTube Music">↗</a>
                 </div>
               </div>
@@ -298,7 +295,7 @@
                   <span id="ingCookieStatusText">Memeriksa sesi YouTube...</span>
                 </div>
                 <div class="ing-cookie-btns">
-                  <button type="button" class="ing-mini-btn primary" id="btnBrowserLoginCookies">🔑 Login YouTube</button>
+                  <button type="button" class="ing-mini-btn primary" id="btnBrowserLoginCookies">Login YouTube</button>
                   <button type="button" class="ing-mini-btn" id="btnVerifyCookies">Cek Sesi</button>
                   <button type="button" class="ing-mini-btn" id="btnManageCookies">Atur Manual</button>
                 </div>
@@ -396,70 +393,25 @@
       </section>
     </div>
 
-    <!-- Bottom Pipeline Hub: Inbox Summary + Next Stage Shortcuts -->
+    <!-- Bottom Docked Inbox Summary & Workflow Strip -->
     <section class="console-card pipeline-hub-card" aria-labelledby="pipelineHubHeading">
-      <div class="panel-header">
-        <div class="panel-title-wrap">
-          <span class="icon-chip accent-cyan">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-            </svg>
-          </span>
-          <div>
-            <h2 id="pipelineHubHeading">Ringkasan Koleksi Inbox &amp; Tahap Pipeline Berikutnya</h2>
-            <p class="panel-sub">Lanjutkan ke halaman khusus untuk mengaudit kualitas FOH, mengonversi sample rate, atau merapikan penomoran lagu</p>
-          </div>
-        </div>
-
-        <div class="library-actions">
+      <div class="pipeline-strip-row">
+        <div class="pipeline-strip-info">
+          <span id="pipelineHubHeading" class="pipeline-strip-title">Koleksi Inbox</span>
           <span class="selection-counter-pill" id="inboxTotalSongsPill">0 Lagu di Inbox</span>
           <span class="selection-counter-pill" id="inboxTotalPlaylistsPill">0 Folder Playlist</span>
-          <button type="button" id="btnOpenInboxExplorer" class="btn-secondary" title="Buka folder library/inbox di File Explorer">
-            <span>📁 Buka Inbox di Explorer</span>
+          <button type="button" id="btnOpenInboxExplorer" class="btn-secondary btn-sm" title="Buka folder library/inbox di File Explorer">
+            <span>Buka Inbox di Explorer</span>
           </button>
         </div>
-      </div>
 
-      <div class="pipeline-stage-grid">
-        <a href="/qc" class="pipeline-stage-card">
-          <div class="pipeline-stage-top">
-            <span class="pipeline-stage-step">TAHAP 2</span>
-            <span class="format-badge cyan">ANALYZER</span>
-          </div>
-          <h3 class="pipeline-stage-title">🔍 QC &amp; Spectral Lab</h3>
-          <p class="pipeline-stage-desc">Audit True Peak (dBTP), Integrated LUFS, dan deteksi 20 kHz Full-Range Spectrum vs Fake HQ (upsampled 128k).</p>
-          <span class="pipeline-stage-cta">Buka QC &amp; Spectral Lab →</span>
-        </a>
-
-        <a href="/converter" class="pipeline-stage-card">
-          <div class="pipeline-stage-top">
-            <span class="pipeline-stage-step">TAHAP 3</span>
-            <span class="format-badge gold">DSP STUDIO</span>
-          </div>
-          <h3 class="pipeline-stage-title">🎛️ Converter &amp; Loudness</h3>
-          <p class="pipeline-stage-desc">Konversi SoXR 28-bit (44.1 / 48 kHz), Lossless Remux (.opus), dan Normalisasi EBU R128 (-14 / -16 LUFS).</p>
-          <span class="pipeline-stage-cta">Buka Converter &amp; Loudness →</span>
-        </a>
-
-        <a href="/organizer" class="pipeline-stage-card">
-          <div class="pipeline-stage-top">
-            <span class="pipeline-stage-step">TAHAP 4</span>
-            <span class="format-badge emerald">FILE STUDIO</span>
-          </div>
-          <h3 class="pipeline-stage-title">🗂️ Tag &amp; File Organizer</h3>
-          <p class="pipeline-stage-desc">Auto-Numbering urutan track (01 - Judul), hapus tag sampah YouTube dengan Live Preview, grouping &amp; batch delete.</p>
-          <span class="pipeline-stage-cta">Buka Tag &amp; File Organizer →</span>
-        </a>
-
-        <a href="/player" class="pipeline-stage-card">
-          <div class="pipeline-stage-top">
-            <span class="pipeline-stage-step">TAHAP 7</span>
-            <span class="format-badge purple">FOH PLAYER</span>
-          </div>
-          <h3 class="pipeline-stage-title">▶️ FOH Live Player &amp; Cue Deck</h3>
-          <p class="pipeline-stage-desc">Stage Playback khusus Soundman: Cue Mode (Auto-Stop), Smooth Fade-Out, Mono/Phase Check, Real-Time RTA Spectrum &amp; 8 Instant Cue Pads.</p>
-          <span class="pipeline-stage-cta">Buka FOH Live Player →</span>
-        </a>
+        <nav class="pipeline-stage-strip" aria-label="Tahap Pipeline Berikutnya">
+          <span class="pipeline-strip-label">Tahap Berikutnya:</span>
+          <a href="/qc" class="pipeline-stage-link">2. QC &amp; Spectral Lab</a>
+          <a href="/converter" class="pipeline-stage-link">3. Converter &amp; Loudness</a>
+          <a href="/organizer" class="pipeline-stage-link">4. Tag &amp; File Organizer</a>
+          <a href="/player" class="pipeline-stage-link">7. FOH Live Player</a>
+        </nav>
       </div>
     </section>
 
@@ -507,7 +459,7 @@
         </div>
         <div class="modal-body">
           <div class="ing-login-box">
-            <h4 class="ing-login-box-title">🔑 Login Otomatis via Jendela Browser (Tanpa Export cookies.txt)</h4>
+            <h4 class="ing-login-box-title">Login Otomatis via Jendela Browser (Tanpa Export cookies.txt)</h4>
             <p class="ing-cookies-help">
               Buka jendela login YouTube Music bawaan, masuk dengan akun Google/YouTube Music Premium Anda seperti biasa. Setelah login selesai, sesi <strong>256 kbps (Opus 774 / AAC 141)</strong> akan otomatis tersimpan dan jendela tertutup sendiri.
             </p>

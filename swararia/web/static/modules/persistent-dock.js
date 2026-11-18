@@ -97,6 +97,7 @@ export function syncDockVisibility() {
   if (isPlayerRoute()) {
     dock.classList.add('is-hidden');
     dock.style.display = 'none';
+    if (document.body) document.body.classList.remove('has-active-dock');
     if (miniPill) miniPill.classList.remove('is-active');
     return;
   }
@@ -108,16 +109,19 @@ export function syncDockVisibility() {
     if (isDockMinimized) {
       dock.classList.add('is-minimized');
       dock.style.display = 'grid'; // remains in layout but translated down
+      if (document.body) document.body.classList.remove('has-active-dock');
       if (miniPill) miniPill.classList.add('is-active');
     } else {
       dock.classList.remove('is-minimized');
       dock.classList.remove('is-hidden');
       dock.style.display = 'grid';
+      if (document.body) document.body.classList.add('has-active-dock');
       if (miniPill) miniPill.classList.remove('is-active');
     }
   } else {
     dock.classList.add('is-hidden');
     dock.style.display = 'none';
+    if (document.body) document.body.classList.remove('has-active-dock');
     if (miniPill) miniPill.classList.remove('is-active');
   }
 }
@@ -347,7 +351,7 @@ export function initPersistentDock() {
 
   function updateScrubberProgress(pct) {
     const clamped = Math.max(0, Math.min(100, pct));
-    seekSlider.style.background = `linear-gradient(to right, #10b981 ${clamped}%, #232733 ${clamped}%)`;
+    seekSlider.style.background = `linear-gradient(to right, #2eb872 ${clamped}%, #262932 ${clamped}%)`;
   }
 
   seekSlider.addEventListener('input', () => {
@@ -408,12 +412,29 @@ export function initPersistentDock() {
   const volWrap = document.createElement('div');
   volWrap.className = 'dock-vol-wrap';
 
+  function createSpeakerSvg(muted) {
+    const shapes = [
+      { tag: 'polygon', attrs: { points: '11 5 6 9 2 9 2 15 6 15 11 19 11 5', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linejoin': 'round' } },
+    ];
+    if (muted) {
+      shapes.push({ tag: 'line', attrs: { x1: '22', y1: '9', x2: '16', y2: '15', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' } });
+      shapes.push({ tag: 'line', attrs: { x1: '16', y1: '9', x2: '22', y2: '15', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' } });
+    } else {
+      shapes.push({ tag: 'path', attrs: { d: 'M15.54 8.46a5 5 0 0 1 0 7.07', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' } });
+      shapes.push({ tag: 'path', attrs: { d: 'M19.07 4.93a10 10 0 0 1 0 14.14', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' } });
+    }
+    const svg = createFilledSvg('0 0 24 24', shapes);
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    return svg;
+  }
+
   const btnMute = document.createElement('button');
   btnMute.type = 'button';
   btnMute.id = 'dockBtnMute';
   btnMute.className = 'dock-mute-btn';
   btnMute.title = 'Mute / Unmute';
-  btnMute.textContent = '🔊';
+  btnMute.appendChild(createSpeakerSvg(false));
 
   const volSlider = document.createElement('input');
   volSlider.type = 'range';
@@ -426,7 +447,7 @@ export function initPersistentDock() {
 
   function updateVolSliderProgress(val) {
     const clamped = Math.max(0, Math.min(100, val));
-    volSlider.style.background = `linear-gradient(to right, #38bdf8 ${clamped}%, #232733 ${clamped}%)`;
+    volSlider.style.background = `linear-gradient(to right, #38a8d8 ${clamped}%, #262932 ${clamped}%)`;
   }
   updateVolSliderProgress(100);
 
@@ -438,7 +459,7 @@ export function initPersistentDock() {
     } else if (audioEl) {
       audioEl.volume = val / 100;
     }
-    btnMute.textContent = val === 0 ? '🔇' : val < 45 ? '🔉' : '🔊';
+    btnMute.replaceChildren(createSpeakerSvg(val === 0));
     if (val > 0) lastNonZeroVolume = val;
   });
 
@@ -604,7 +625,7 @@ export function initPersistentDock() {
     const pct = Math.round((audioEl.volume || 0) * 100);
     volSlider.value = String(pct);
     updateVolSliderProgress(pct);
-    btnMute.textContent = audioEl.muted || pct === 0 ? '🔇' : pct < 45 ? '🔉' : '🔊';
+    btnMute.replaceChildren(createSpeakerSvg(audioEl.muted || pct === 0));
   });
 
   // ---------------------------------------------------------------------------

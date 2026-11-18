@@ -80,14 +80,16 @@ function captureCurrentView(routePath) {
     modalEls: modals,
     title: document.title,
     pageKey: resolved.config.key,
-    scrollTop: window.scrollY || 0,
+    scrollTop: currentMain.scrollTop || window.scrollY || 0,
   });
 }
 
 function insertViewElements(mainEl, footerEl, modalEls) {
+  const rail = document.getElementById('studioRail');
   const header = document.querySelector('header.app-header') || document.body.firstElementChild;
-  if (header && header.parentElement === document.body) {
-    header.after(mainEl);
+  const anchor = (rail && rail.parentElement === document.body) ? rail : header;
+  if (anchor && anchor.parentElement === document.body) {
+    anchor.after(mainEl);
   } else {
     document.body.prepend(mainEl);
   }
@@ -160,6 +162,7 @@ export async function spaNavigate(targetUrl, isPopState = false) {
       currentRoutePath = resolved.path;
 
       window.scrollTo(0, targetView.scrollTop || 0);
+      targetView.mainEl.scrollTop = targetView.scrollTop || 0;
 
       // Trigger wakeups if returning to player
       if (resolved.config.key === 'player') {
@@ -207,6 +210,7 @@ export async function spaNavigate(targetUrl, isPopState = false) {
       });
 
       window.scrollTo(0, 0);
+      newMain.scrollTop = 0;
 
       // Dynamically load page module
       if (resolved.config.script) {

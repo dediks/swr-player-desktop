@@ -391,8 +391,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnExecuteSplitBottom) btnExecuteSplitBottom.disabled = activeCount === 0;
     if (btnExecuteSplitBottomText) {
       btnExecuteSplitBottomText.textContent = activeSourceMode === 'youtube'
-        ? '✂️ Unduh dari YouTube & Potong Sekarang (' + activeCount + ')'
-        : '✂️ Eksekusi Potong Video Sekarang (' + activeCount + ')';
+        ? 'Unduh dari YouTube & Potong Sekarang (' + activeCount + ')'
+        : 'Eksekusi Potong Video Sekarang (' + activeCount + ')';
     }
 
     if (segmentsList.length === 0) {

@@ -6,9 +6,6 @@
   <meta name="description" content="SWARARIA AUDIO LAB - Stage 5: Multitrack WAV Auto-Splitter (DAW Ready)">
   <title>SWARARIA AUDIO LAB // 5. Multitrack Splitter</title>
   <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/converter.css">
   <link rel="stylesheet" href="/static/css/splitter.css">
@@ -88,14 +85,14 @@
             <div class="splitter-source-box">
               <div class="source-location-row">
                 <div class="source-location-info">
-                  <span class="source-location-label">📂 Folder:</span>
+                  <span class="source-location-label">Folder:</span>
                   <code id="activeSourceBadge" class="source-location-badge">library/inbox</code>
                   <input type="hidden" id="sourceDirInput">
                 </div>
                 <div class="source-location-actions">
-                  <button type="button" id="btnBrowseSource" class="btn-chip">📁 Pilih Folder Sesi...</button>
-                  <button type="button" id="btnOpenSourceExplorer" class="btn-chip" title="Buka folder sumber di File Explorer">📂 Explorer</button>
-                  <button type="button" id="btnRefreshSource" class="btn-chip" title="Muat ulang isi folder">🔄 Refresh</button>
+                  <button type="button" id="btnBrowseSource" class="btn-chip">Pilih Folder Sesi...</button>
+                  <button type="button" id="btnOpenSourceExplorer" class="btn-chip" title="Buka folder sumber di File Explorer">Explorer</button>
+                  <button type="button" id="btnRefreshSource" class="btn-chip" title="Muat ulang isi folder">Refresh</button>
                 </div>
               </div>
 
@@ -256,7 +253,7 @@
                 placeholder="Folder Tujuan Otomatis: [Nama Sesi] [Split Per Lagu] (Kosongkan untuk otomatis)"
                 readonly
               >
-              <button type="button" id="btnBrowseDest" class="btn-chip">📁 Pilih Tujuan...</button>
+              <button type="button" id="btnBrowseDest" class="btn-chip">Pilih Tujuan...</button>
               <button type="button" id="btnClearDest" class="btn-chip">Reset</button>
             </div>
           </div>
@@ -317,11 +314,6 @@
 
           <div class="terminal-container">
             <div class="terminal-bar">
-              <div class="terminal-dots">
-                <span class="tdot red"></span>
-                <span class="tdot yellow"></span>
-                <span class="tdot green"></span>
-              </div>
               <span class="terminal-title">MULTITRACK SPLITTER ENGINE LOG</span>
               <button type="button" id="btnClearLogs" class="btn-text">Clear</button>
             </div>
@@ -352,12 +344,12 @@
 
         <div class="library-actions">
           <button type="button" id="btnAddSegmentRow" class="btn-secondary">+ Tambah Segmen</button>
-          <button type="button" id="btnAutoNumberTitles" class="btn-secondary" title="Reset penomoran judul lagu berurutan">🔢 Urutkan Judul</button>
+          <button type="button" id="btnAutoNumberTitles" class="btn-secondary" title="Reset penomoran judul lagu berurutan">Urutkan Judul</button>
           <button type="button" id="btnExecuteSplitBottom" class="btn-primary" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
-            <span id="btnExecuteSplitBottomText">✂️ Eksekusi Potong Multitrack (0)</span>
+            <span id="btnExecuteSplitBottomText">Eksekusi Potong Multitrack (0)</span>
           </button>
         </div>
       </div>
@@ -415,7 +407,7 @@
         <div class="modal-shortcuts" id="modalShortcuts"></div>
 
         <div class="modal-current-bar">
-          <button type="button" id="btnModalUp" class="btn-chip">⬆️ Naik 1 Level</button>
+          <button type="button" id="btnModalUp" class="btn-chip">Naik 1 Level</button>
           <code class="modal-current-path" id="modalCurrentPath">/</code>
         </div>
 

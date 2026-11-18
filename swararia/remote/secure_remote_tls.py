@@ -34,7 +34,7 @@ def tls_context(host, extra_ips=()):
     now = datetime.now(timezone.utc)
     cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
             .public_key(key.public_key()).serial_number(x509.random_serial_number())
-            .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(hours=12))
+            .not_valid_before(now - timedelta(minutes=15)).not_valid_after(now + timedelta(hours=12))
             .add_extension(x509.SubjectAlternativeName([x509.IPAddress(addr) for addr in san_ips]), critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)

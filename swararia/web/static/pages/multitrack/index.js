@@ -432,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (btnExecuteSplitBottom) btnExecuteSplitBottom.disabled = activeCount === 0;
     if (btnExecuteSplitBottomText) {
-      btnExecuteSplitBottomText.textContent = '✂️ Eksekusi Potong Multitrack (' + activeCount + ')';
+      btnExecuteSplitBottomText.textContent = 'Eksekusi Potong Multitrack (' + activeCount + ')';
     }
 
     if (segmentsList.length === 0) {

@@ -4057,13 +4057,17 @@ document.addEventListener('DOMContentLoaded', () => {
       .trim()
       .slice(0, 60);
   }
+  function getNativeFolderKey(fileObj) {
+    return fileObj && typeof fileObj.folder === 'string' && fileObj.folder
+      ? fileObj.folder.split(/[/\\]/)[0]
+      : '__ROOT__';
+  }
   function buildNativeCatalogSnapshot() {
     if (typeof allFiles === 'undefined' || !Array.isArray(allFiles)) return null;
-    const vis = typeof visibleFiles !== 'undefined' && Array.isArray(visibleFiles) ? visibleFiles : [];
     const pl = typeof activePlaylist === 'string' && activePlaylist ? activePlaylist : 'ALL';
     const plFiles = pl === 'ALL'
       ? allFiles
-      : (vis.length > 0 ? vis : allFiles.filter(f => f && (pl === '__ROOT__' ? f.folder === '' : f.folder === pl)));
+      : allFiles.filter(f => f && getNativeFolderKey(f) === pl);
     const playlistsArr = typeof allPlaylists !== 'undefined' && Array.isArray(allPlaylists) ? allPlaylists : [];
     const groups = [{ id: getNativeGroupId('ALL'), name: 'Semua Lagu', count: allFiles.length }];
     playlistsArr.forEach(p => {
@@ -4084,7 +4088,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!f || typeof f.rel_path !== 'string' || !f.name) continue;
       const tid = getNativeTrackId(f.rel_path);
       if (!tid) continue;
-      const folderKey = typeof f.folder === 'string' && f.folder ? f.folder.split(/[/\\]/)[0] : '__ROOT__';
+      const folderKey = getNativeFolderKey(f);
       items.push({ id: tid, title: String(f.name).slice(0, 140), group_id: getNativeGroupId(folderKey), rel_path: f.rel_path });
     }
     const sourceDir = typeof currentSourceDir === 'string' && currentSourceDir ? currentSourceDir : null;

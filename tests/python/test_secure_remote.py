@@ -474,3 +474,41 @@ def test_media_transfer_disabled_by_default_and_streams_verified_audio(tmp_path)
     finally:
         remote.stop()
         assert remote.admin_status()['media_transfer_enabled'] is False
+
+
+def test_mp4_mime_fallback_and_clock_skew_window(tmp_path):
+    from datetime import datetime, timezone
+    from cryptography import x509
+    from swararia.core import fs_browser
+    from swararia.remote.secure_remote import SecureRemote
+    from swararia.remote.secure_remote_tls import tls_context
+    from swararia.server.hub import RemotePlayerHub
+
+    assert fs_browser.AUDIO_MIME_TYPES['.mp4'] == 'audio/mp4'
+    _, cert_pem, _ = tls_context('127.0.0.1')
+    cert = x509.load_pem_x509_certificate(cert_pem.encode())
+    skew = (datetime.now(timezone.utc) - cert.not_valid_before_utc).total_seconds()
+    assert skew >= 14 * 60, 'ephemeral cert must tolerate minor clock skew'
+
+    song = tmp_path / 'sample.mp4'
+    song.write_bytes(b'\x00\x00\x00\x18ftypmp42' + b'audio-data' * 64)
+    remote = SecureRemote(
+        RemotePlayerHub(),
+        media_resolver=lambda _src, _rel, _def: (song, 'application/octet-stream'),
+    )
+    remote.activate()
+    remote.set_media_transfer(True)
+    pair = remote.pair(remote.open_invite(), 'MediaCheck')
+    remote.approve(pair['device_id'], 'control')
+    remote.master_poll(
+        {'is_playing': False},
+        [],
+        'master-mp4-instance',
+        catalog={'items': [{'id': 'trk_mp4', 'title': 'Sample', 'rel_path': 'sample.mp4'}]},
+    )
+    media_ref = remote.authorize_media(pair['token'], 'trk_mp4')
+    stream, mime_type, size_bytes, _, safe_name = remote.open_media_file(media_ref, need_stream=False)
+    assert stream is None
+    assert mime_type == 'audio/mp4'
+    assert size_bytes == song.stat().st_size
+    assert safe_name == 'sample.mp4'

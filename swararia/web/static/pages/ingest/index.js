@@ -1773,7 +1773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bName = statusData.browser_name ? ` (${statusData.browser_name})` : '';
     if (btnBrowserLoginCookies) {
       btnBrowserLoginCookies.disabled = isActive || !available;
-      btnBrowserLoginCookies.textContent = isActive ? '⏳ Menunggu Login...' : '🔑 Login YouTube';
+      btnBrowserLoginCookies.textContent = isActive ? 'Menunggu Login...' : 'Login YouTube';
     }
     if (btnModalBrowserLogin) {
       btnModalBrowserLogin.disabled = isActive || !available;

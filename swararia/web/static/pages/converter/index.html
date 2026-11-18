@@ -6,9 +6,6 @@
   <meta name="description" content="SWARARIA AUDIO LAB - Stage 3: Sample Rate Converter & EBU R128 Loudness Processor">
   <title>SWARARIA AUDIO LAB // 3. Converter &amp; Loudness</title>
   <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/converter.css">
   <link rel="stylesheet" href="/static/css/player.css">
@@ -151,7 +148,7 @@
           <!-- Step C2: EBU R128 Loudness Normalization & True Peak Limiter -->
           <div class="field-group compact-field" id="loudnormGroup">
             <div class="field-label">
-              <span>🎚️ Level Loudness &amp; Anti-Clipping (EBU R128 + Limiter -1.5 dBTP)</span>
+              <span>Level Loudness &amp; Anti-Clipping (EBU R128 + Limiter -1.5 dBTP)</span>
               <span class="label-hint" id="loudnormHintText">Opsional: Ratakan volume antar lagu agar fader FOH stabil</span>
             </div>
             <div class="seg-pills three-cols">
@@ -189,7 +186,7 @@
               <label class="seg-pill">
                 <input type="radio" name="outputMode" value="auto" checked>
                 <span class="seg-pill-inner">
-                  <strong>📁 Folder Baru</strong>
+                  <strong>Folder Baru</strong>
                   <small>Otomatis (Aman)</small>
                 </span>
               </label>
@@ -197,7 +194,7 @@
               <label class="seg-pill">
                 <input type="radio" name="outputMode" value="overwrite">
                 <span class="seg-pill-inner">
-                  <strong>🔄 Timpa Asli</strong>
+                  <strong>Timpa Asli</strong>
                   <small>Overwrite</small>
                 </span>
               </label>
@@ -205,7 +202,7 @@
               <label class="seg-pill">
                 <input type="radio" name="outputMode" value="custom">
                 <span class="seg-pill-inner">
-                  <strong>💾 Folder Lain / USB</strong>
+                  <strong>Folder Lain / USB</strong>
                   <small>Custom Path</small>
                 </span>
               </label>
@@ -225,7 +222,7 @@
                   placeholder="Klik 'Pilih Folder...' untuk memilih lokasi simpan / USB"
                   aria-label="Folder Tujuan Hasil Konversi"
                 >
-                <button type="button" id="btnBrowseDest" class="btn-secondary btn-sm">📁 Pilih Folder...</button>
+                <button type="button" id="btnBrowseDest" class="btn-secondary btn-sm">Pilih Folder...</button>
                 <button type="button" id="btnClearDest" class="btn-chip" title="Kembalikan ke mode folder baru otomatis">Reset</button>
               </div>
             </div>
@@ -278,11 +275,6 @@
 
           <div class="terminal-container">
             <div class="terminal-bar">
-              <div class="terminal-dots">
-                <span class="tdot red"></span>
-                <span class="tdot yellow"></span>
-                <span class="tdot green"></span>
-              </div>
               <span class="terminal-title">FFMPEG RESAMPLER STREAM</span>
               <button type="button" id="btnClearLogs" class="btn-text">Clear</button>
             </div>
@@ -327,7 +319,7 @@
             <span>Probe Rate &amp; Spectrum</span>
           </button>
           <button type="button" id="btnSendToOrganizer" class="btn-secondary" title="Buka halaman 4. Tag & File Organizer untuk merapikan nama urut track atau menghapus file">
-            <span id="btnSendToOrganizerText">🏷️ Rapikan Nama / Hapus →</span>
+            <span id="btnSendToOrganizerText">Rapikan Nama / Hapus &rarr;</span>
           </button>
           <button type="button" id="btnConvertSelected" class="btn-primary" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
@@ -342,14 +334,14 @@
       <div class="source-playlist-bar">
         <div class="source-location-row">
           <div class="source-location-info">
-            <span class="source-location-label">📂 Sumber:</span>
+            <span class="source-location-label">Sumber:</span>
             <code id="activeSourceBadge" class="source-location-badge">library/inbox (Koleksi Default)</code>
             <input type="hidden" id="sourceDirInput">
           </div>
           <div class="source-location-actions">
             <span class="label-hint" id="probeStatusHint">Klik tab folder untuk memfilter tabel</span>
-            <button type="button" id="btnBrowseSource" class="btn-chip">📁 Ganti Folder Sumber / USB...</button>
-            <button type="button" id="btnResetInbox" class="btn-chip hidden">↩️ Kembali ke Inbox</button>
+            <button type="button" id="btnBrowseSource" class="btn-chip">Ganti Folder Sumber / USB...</button>
+            <button type="button" id="btnResetInbox" class="btn-chip hidden">Kembali ke Inbox</button>
           </div>
         </div>
 
@@ -369,10 +361,10 @@
             aria-label="Cari judul lagu"
           >
           <select id="groupByMode" class="toolbar-select" aria-label="Kelompokkan Tabel Berdasarkan" title="Pilih cara pengelompokan baris tabel">
-            <option value="folder">Grup: 📁 Folder Playlist</option>
-            <option value="type">Grup: 🎵 Tipe File (.opus/.webm/.mp3)</option>
-            <option value="folder_type">Grup: 📁 Folder + 🎵 Tipe File</option>
-            <option value="rate">Grup: 🎛️ Sample Rate</option>
+            <option value="folder">Grup: Folder Playlist</option>
+            <option value="type">Grup: Tipe File (.opus/.webm/.mp3)</option>
+            <option value="folder_type">Grup: Folder + Tipe File</option>
+            <option value="rate">Grup: Sample Rate</option>
           </select>
           <select id="filterFormat" class="toolbar-select" aria-label="Filter Format">
             <option value="ALL">Semua Format</option>
@@ -447,7 +439,7 @@
         <div class="modal-shortcuts" id="modalShortcuts"></div>
 
         <div class="modal-current-bar">
-          <button type="button" id="btnModalUp" class="btn-chip">⬆️ Naik 1 Level</button>
+          <button type="button" id="btnModalUp" class="btn-chip">Naik 1 Level</button>
           <code class="modal-current-path" id="modalCurrentPath">/</code>
         </div>
 

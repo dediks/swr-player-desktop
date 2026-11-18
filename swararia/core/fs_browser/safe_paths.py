@@ -189,6 +189,7 @@ AUDIO_MIME_TYPES: dict[str, str] = {
     ".webm": "audio/webm",
     ".mp3": "audio/mpeg",
     ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
     ".aac": "audio/aac",
     ".wav": "audio/wav",
     ".flac": "audio/flac",

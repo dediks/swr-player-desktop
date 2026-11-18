@@ -578,7 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
       selectionCounterPill.textContent = `${count} lagu dipilih`;
     }
     if (btnSendToNormalizerText) {
-      btnSendToNormalizerText.textContent = `🎚️ Normalisasi Terpilih (${count}) →`;
+      btnSendToNormalizerText.textContent = `Normalisasi Terpilih (${count}) →`;
     }
     if (btnSendToNormalizer) {
       btnSendToNormalizer.disabled = count === 0;

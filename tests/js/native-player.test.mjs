@@ -442,3 +442,43 @@ console.log('PASS cross-poll browser Stop/Play/track load, asynchronous ack hand
   assert.equal(res.observed.track_id, 'trk_2');
   console.log('PASS native select_track (including empty deck Cue/Play), select_group, and next');
 }
+
+{
+  const snapCtx = {
+    apiPost: async () => ({ ok: true, data: {} }),
+    createNativeCommandConsumer,
+    audioEl: media,
+    activeTrackObj: null,
+    transportIntentVersion: 0,
+    playCurrentTrack: async () => {},
+    pauseCurrentTrack: () => {},
+    stopAndResetCue: () => {},
+    isRemoteController: false,
+    isPageUnloading: false,
+    buildMasterStateSnapshot: () => ({}),
+    activePlaylist: 'Event',
+    allPlaylists: [
+      { name: '__ROOT__', label: 'Root', total: 1 },
+      { name: 'Event', label: 'Event', total: 2 },
+    ],
+    allFiles: [
+      { name: 'RootTrack.wav', folder: '', rel_path: 'RootTrack.wav' },
+      { name: 'Main.wav', folder: 'Event', rel_path: 'Event/Main.wav' },
+      { name: 'SubStage.mp3', folder: 'Event/Stage2', rel_path: 'Event/Stage2/SubStage.mp3' },
+    ],
+    // Filtered PC view (visibleFiles) must not shrink or hide subfolder tracks for Android.
+    visibleFiles: [{ name: 'Main.wav', folder: 'Event', rel_path: 'Event/Main.wav' }],
+    currentSourceDir: '/tmp/inbox',
+    fetch: async () => ({ ok: true, json: async () => ({ commands: [] }) }),
+    setTimeout, clearTimeout, Date, console, crypto: { randomUUID: () => 'catalog-snap-instance' },
+  };
+  vm.createContext(snapCtx);
+  vm.runInContext(polling, snapCtx);
+  const snap = vm.runInContext('buildNativeCatalogSnapshot()', snapCtx);
+  assert.deepEqual(Array.from(snap.payload.items, i => i.title), ['Main.wav', 'SubStage.mp3']);
+  assert.equal(snap.payload.items[0].group_id, snap.payload.items[1].group_id);
+  snapCtx.activePlaylist = '__ROOT__';
+  const rootSnap = vm.runInContext('buildNativeCatalogSnapshot()', snapCtx);
+  assert.deepEqual(Array.from(rootSnap.payload.items, i => i.title), ['RootTrack.wav']);
+  console.log('PASS buildNativeCatalogSnapshot preserves nested subfolders regardless of PC filter');
+}

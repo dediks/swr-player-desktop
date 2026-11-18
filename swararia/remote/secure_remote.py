@@ -49,6 +49,17 @@ class SecureRemote:
     MAX_MEDIA_BYTES = 150 * 1024 * 1024
     MAX_SHA_CACHE = 512
     DOWNLOADABLE_EXTENSIONS = frozenset({'.mp3', '.m4a', '.mp4', '.aac', '.opus', '.ogg', '.webm', '.flac', '.wav'})
+    MEDIA_MIME_FALLBACKS = {
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.mp4': 'audio/mp4',
+        '.aac': 'audio/aac',
+        '.opus': 'audio/ogg',
+        '.ogg': 'audio/ogg',
+        '.webm': 'audio/webm',
+        '.flac': 'audio/flac',
+        '.wav': 'audio/wav',
+    }
 
     def __init__(self, hub, clock=time.time, media_resolver=None, default_inbox=None):
         self.hub, self.clock = hub, clock
@@ -589,6 +600,8 @@ class SecureRemote:
         ext = target_path.suffix.lower()
         if ext not in self.DOWNLOADABLE_EXTENSIONS:
             raise RemoteError('unsupported_media_format', 415)
+        if not isinstance(mime_type, str) or not mime_type.lower().startswith('audio/'):
+            mime_type = self.MEDIA_MIME_FALLBACKS[ext]
 
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
         try:
