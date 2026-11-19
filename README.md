@@ -77,13 +77,37 @@ winget install JRSoftware.InnoSetup
 python packaging/build_desktop.py --install-deps --installer
 ```
 
-Hasilnya adalah file **`dist\SwarariaAudioLab_Setup.exe`**.
+Hasilnya adalah file **`dist\SwarariaAudioLab_Setup.exe`** (beserta file checksum **`dist\SwarariaAudioLab_Setup.exe.sha256`**).
 Saat file ini dijalankan di komputer Windows mana pun:
 
 - Tampil wizard instalasi modern standar Windows.
 - Pengguna tidak butuh install Python, FFmpeg, atau buka terminal/CMD.
 - Otomatis membuat shortcut di Desktop dan Start Menu.
 - Dilengkapi fitur Uninstall bersih via Windows Settings (_Add or remove programs_).
+
+### Mengatasi Peringatan Windows Defender SmartScreen (`Unknown publisher`):
+
+Jika installer dirilis tanpa sertifikat **Code Signing** komersial/resmi, Windows dapat menampilkan jendela _"Windows protected your PC"_ dengan keterangan `Publisher: Unknown publisher`:
+
+- **Untuk Pengguna (Menjalankan Installer):**
+  1. Klik **`More info`** (atau **`Info selengkapnya`**) pada dialog SmartScreen, lalu klik **`Run anyway`** (**`Jalankan saja`**).
+  2. Jika file diunduh dari internet/GitHub Releases, verifikasi keasliannya terlebih dahulu dengan mencocokkan hash SHA-256 terhadap file `.sha256` rilis:
+     ```powershell
+     Get-FileHash .\SwarariaAudioLab_Setup.exe -Algorithm SHA256
+     ```
+- **Untuk Developer / Rilis Publik (Code Signing Opsional):**
+  `packaging/build_desktop.py` dan `packaging/installer.iss` mendukung Authenticode signing opsional (otomatis menandatangani `SwarariaAudioLab.exe`, uninstaller, dan `SwarariaAudioLab_Setup.exe`) apabila Anda memiliki sertifikat Code Signing (mis. Microsoft Artifact Signing, SignPath untuk open-source, atau CA komersial seperti DigiCert/Sectigo):
+  ```powershell
+  # 1. Via Windows Certificate Store / USB Token (SHA-1 thumbprint):
+  python packaging/build_desktop.py --installer --sign-thumbprint "<THUMBPRINT_SHA1>"
+
+  # 2. Via file .pfx/.p12 (password diambil dari env var, tidak ditulis di argumen CLI):
+  $env:SWARARIA_SIGN_PFX_PASSWORD = "password-pfx-anda"
+  python packaging/build_desktop.py --installer --sign-pfx "C:\path\cert.pfx"
+
+  # 3. Via perintah kustom (mis. Azure Artifact Signing / wrapper CI):
+  python packaging/build_desktop.py --installer --sign-command 'azuresigntool sign ... "{file}"'
+  ```
 
 ---
 

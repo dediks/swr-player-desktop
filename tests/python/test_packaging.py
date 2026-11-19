@@ -1,7 +1,9 @@
 """Packaging and desktop bundle size-optimization tests."""
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import sys
 import types
 import zipfile
@@ -11,6 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = ROOT / "packaging" / "SwarariaAudioLab.spec"
 BUILDER_PATH = ROOT / "packaging" / "build_desktop.py"
+ISS_PATH = ROOT / "packaging" / "installer.iss"
 
 
 def _load_builder():
@@ -193,3 +196,216 @@ def test_parse_sha256_checksum_matches_exact_asset():
     manifest = f"{'b' * 64}  other.zip\n{digest} *ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip\n"
     assert builder.parse_sha256_checksum(manifest, "ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip") == digest
     assert builder.parse_sha256_checksum(manifest, "missing.zip") is None
+
+
+def test_installer_iss_guards_signtool_with_preprocessor():
+    iss_text = ISS_PATH.read_text(encoding="utf-8")
+    assert "#ifdef SignToolName" in iss_text
+    assert "SignTool={#SignToolName}" in iss_text
+    assert "SignedUninstaller=yes" in iss_text
+    assert "#endif" in iss_text
+
+
+def test_find_signtool_prefers_newest_windows_10_x64_sdk(tmp_path: Path):
+    builder = _load_builder()
+    kit_root = tmp_path / "pf86"
+    old_x64 = kit_root / "Windows Kits" / "10" / "bin" / "10.0.19041.0" / "x64" / "signtool.exe"
+    new_x86 = kit_root / "Windows Kits" / "10" / "bin" / "10.0.26100.0" / "x86" / "signtool.exe"
+    new_x64 = kit_root / "Windows Kits" / "10" / "bin" / "10.0.26100.0" / "x64" / "signtool.exe"
+    for candidate in (old_x64, new_x86, new_x64):
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_bytes(b"mz")
+
+    with patch.object(builder.shutil, "which", return_value=None):
+        found = builder.find_signtool(program_roots=(str(kit_root),))
+    assert found == new_x64.resolve()
+
+    explicit = tmp_path / "custom-signtool.exe"
+    explicit.write_bytes(b"mz")
+    assert builder.find_signtool(explicit_path=explicit) == explicit.resolve()
+    assert builder.find_signtool(explicit_path=tmp_path / "missing.exe") is None
+
+
+def test_resolve_signing_config_modes_and_validation(tmp_path: Path):
+    builder = _load_builder()
+    signtool = tmp_path / "signtool.exe"
+    signtool.write_bytes(b"mz")
+    pfx = tmp_path / "cert.pfx"
+    pfx.write_bytes(b"pfx")
+
+    assert builder.resolve_signing_config(environ={}) is None
+
+    thumb_cfg = builder.resolve_signing_config(
+        thumbprint="aa:bb cc:dd" + "00" * 16,
+        signtool_path=str(signtool),
+        machine_store=True,
+        environ={},
+    )
+    assert thumb_cfg is not None
+    assert thumb_cfg.mode == "thumbprint"
+    assert thumb_cfg.thumbprint == "AABBCCDD" + "00" * 16
+    assert thumb_cfg.machine_store is True
+    assert thumb_cfg.signtool_path == signtool.resolve()
+
+    pfx_cfg = builder.resolve_signing_config(
+        environ={
+            "SWARARIA_SIGN_PFX": str(pfx),
+            "SWARARIA_SIGN_PFX_PASSWORD": "super-secret-password",
+            "SWARARIA_SIGNTOOL_PATH": str(signtool),
+            "SWARARIA_SIGN_TIMESTAMP_URL": "https://timestamp.example.test",
+        }
+    )
+    assert pfx_cfg is not None
+    assert pfx_cfg.mode == "pfx"
+    assert pfx_cfg.pfx_path == pfx.resolve()
+    assert pfx_cfg.pfx_password == "super-secret-password"
+    assert pfx_cfg.timestamp_url == "https://timestamp.example.test"
+
+    cmd_cfg = builder.resolve_signing_config(sign_command='azuresigntool sign "{file}"', environ={})
+    assert cmd_cfg is not None
+    assert cmd_cfg.mode == "command"
+
+    for bad_kwargs in (
+        {"thumbprint": "0" * 40, "pfx": str(pfx), "environ": {}},
+        {"thumbprint": "not-hex", "signtool_path": str(signtool), "environ": {}},
+        {"thumbprint": "0" * 40, "timestamp_url": "ftp://bad.example", "signtool_path": str(signtool), "environ": {}},
+    ):
+        try:
+            builder.resolve_signing_config(**bad_kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Expected ValueError for {bad_kwargs}")
+
+    try:
+        builder.resolve_signing_config(pfx=str(tmp_path / "missing.pfx"), signtool_path=str(signtool), environ={})
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("Expected FileNotFoundError for missing PFX")
+
+
+def test_build_sign_argv_and_sign_binary_redacts_pfx_password(tmp_path: Path):
+    builder = _load_builder()
+    signtool = tmp_path / "signtool.exe"
+    signtool.write_bytes(b"mz")
+    pfx = tmp_path / "cert.pfx"
+    pfx.write_bytes(b"pfx")
+    target = tmp_path / "SwarariaAudioLab.exe"
+    target.write_bytes(b"exe")
+
+    pfx_cfg = builder.SigningConfig(
+        mode="pfx",
+        pfx_path=pfx,
+        pfx_password="top-secret-password",
+        signtool_path=signtool,
+    )
+    argv = builder.build_sign_argv(target, pfx_cfg)
+    assert argv == [
+        str(signtool),
+        "sign",
+        "/fd",
+        "SHA256",
+        "/tr",
+        builder.DEFAULT_SIGN_TIMESTAMP_URL,
+        "/td",
+        "SHA256",
+        "/f",
+        str(pfx),
+        "/p",
+        "top-secret-password",
+        str(target),
+    ]
+
+    cmd_cfg = builder.SigningConfig(mode="command", command_template='my-signer --in "{file}"')
+    assert builder.build_sign_argv(target, cmd_cfg) == ["my-signer", "--in", str(target)]
+
+    fake_fail = types.SimpleNamespace(
+        returncode=1,
+        stdout="",
+        stderr="SignTool Error: failed with /p top-secret-password on cert.pfx",
+    )
+    buf = io.StringIO()
+    with patch.object(builder.subprocess, "run", return_value=fake_fail):
+        with contextlib.redirect_stdout(buf):
+            ok = builder.sign_binary(target, pfx_cfg)
+    assert ok is False
+    output = buf.getvalue()
+    assert "top-secret-password" not in output
+    assert "***" in output
+
+
+def test_compile_inno_setup_installer_signing_and_sha256(tmp_path: Path):
+    builder = _load_builder()
+    pkg_dir = tmp_path / "packaging"
+    dist_dir = tmp_path / "dist"
+    pkg_dir.mkdir(parents=True)
+    dist_dir.mkdir(parents=True)
+    (pkg_dir / "installer.iss").write_text("[Setup]\n", encoding="utf-8")
+    setup_exe = dist_dir / "SwarariaAudioLab_Setup.exe"
+    setup_exe.write_bytes(b"setup-payload")
+    iscc = tmp_path / "ISCC.exe"
+    iscc.write_bytes(b"iscc")
+    signtool = tmp_path / "signtool.exe"
+    signtool.write_bytes(b"mz")
+    pfx = tmp_path / "cert.pfx"
+    pfx.write_bytes(b"pfx")
+
+    calls = []
+
+    def _fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return types.SimpleNamespace(returncode=0)
+
+    with (
+        patch.object(builder, "PACKAGING_DIR", pkg_dir),
+        patch.object(builder, "BASE_DIR", tmp_path),
+        patch.object(builder, "find_inno_setup_compiler", return_value=iscc),
+        patch.object(builder.subprocess, "run", side_effect=_fake_run),
+    ):
+        assert builder.compile_inno_setup_installer() is True
+        cfg = builder.SigningConfig(
+            mode="pfx",
+            pfx_path=pfx,
+            pfx_password="hidden-pfx-password",
+            signtool_path=signtool,
+        )
+        assert builder.compile_inno_setup_installer(signing_config=cfg) is True
+
+    unsigned_cmd, unsigned_kw = calls[0]
+    assert unsigned_cmd == [str(iscc), str(pkg_dir / "installer.iss")]
+    assert unsigned_kw.get("env") is None
+
+    signed_cmd, signed_kw = calls[1]
+    assert "/DSignToolName=swararia" in signed_cmd
+    signtool_flags = [arg for arg in signed_cmd if arg.startswith("/Sswararia=")]
+    assert len(signtool_flags) == 1
+    assert "--sign-target $q$f$q" in signtool_flags[0]
+    assert "hidden-pfx-password" not in " ".join(signed_cmd)
+    assert signed_kw["env"]["SWARARIA_SIGN_PFX"] == str(pfx)
+    assert signed_kw["env"]["SWARARIA_SIGN_PFX_PASSWORD"] == "hidden-pfx-password"
+
+    sha_manifest = dist_dir / "SwarariaAudioLab_Setup.exe.sha256"
+    assert sha_manifest.is_file()
+    digest = builder.parse_sha256_checksum(sha_manifest.read_text(encoding="utf-8"), "SwarariaAudioLab_Setup.exe")
+    assert digest == builder._sha256_file(setup_exe)
+
+
+def test_main_sign_target_invokes_sign_binary_from_env(tmp_path: Path):
+    builder = _load_builder()
+    target = tmp_path / "uninst.exe"
+    target.write_bytes(b"uninst")
+    seen = []
+
+    def _fake_run(argv, **kwargs):
+        seen.append(argv)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.dict(builder.os.environ, {"SWARARIA_SIGN_COMMAND": 'custom-signer "{file}"'}, clear=False),
+        patch.object(builder.sys, "argv", ["build_desktop.py", "--sign-target", str(target)]),
+        patch.object(builder.subprocess, "run", side_effect=_fake_run),
+    ):
+        assert builder.main() == 0
+
+    assert seen == [["custom-signer", str(target.resolve())]]

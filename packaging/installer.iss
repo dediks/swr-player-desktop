@@ -32,6 +32,10 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=swararia.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+#ifdef SignToolName
+SignTool={#SignToolName}
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

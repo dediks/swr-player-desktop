@@ -14,10 +14,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from typing import Mapping
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -26,6 +28,17 @@ PACKAGING_DIR = Path(__file__).resolve().parent
 BASE_DIR = PACKAGING_DIR.parent  # repository root
 VENDOR_BIN_DIR = BASE_DIR / ".vendor" / "bin"
 DIST_DIR = BASE_DIR / "dist" / "SwarariaAudioLab"
+
+DEFAULT_SIGN_TIMESTAMP_URL = "http://timestamp.digicert.com"
+_SIGN_ENV_KEYS = (
+    "SWARARIA_SIGN_THUMBPRINT",
+    "SWARARIA_SIGN_PFX",
+    "SWARARIA_SIGN_PFX_PASSWORD",
+    "SWARARIA_SIGN_TIMESTAMP_URL",
+    "SWARARIA_SIGN_COMMAND",
+    "SWARARIA_SIGNTOOL_PATH",
+    "SWARARIA_SIGN_MACHINE_STORE",
+)
 
 FFMPEG_SHARED_ASSET = "ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
 FFMPEG_SHARED_ARCHIVE_URL = (
@@ -236,7 +249,298 @@ def find_inno_setup_compiler() -> Path | None:
     return None
 
 
-def compile_inno_setup_installer() -> bool:
+class SigningConfig:
+    """Validated Authenticode signing configuration."""
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        thumbprint: str | None = None,
+        pfx_path: Path | None = None,
+        pfx_password: str | None = None,
+        timestamp_url: str = DEFAULT_SIGN_TIMESTAMP_URL,
+        command_template: str | None = None,
+        signtool_path: Path | None = None,
+        machine_store: bool = False,
+    ) -> None:
+        self.mode = mode
+        self.thumbprint = thumbprint
+        self.pfx_path = pfx_path
+        self.pfx_password = pfx_password
+        self.timestamp_url = timestamp_url
+        self.command_template = command_template
+        self.signtool_path = signtool_path
+        self.machine_store = machine_store
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, SigningConfig) and self.__dict__ == other.__dict__
+
+    def __repr__(self) -> str:
+        return (
+            f"SigningConfig(mode={self.mode!r}, thumbprint={self.thumbprint!r}, "
+            f"pfx_path={self.pfx_path!r}, has_password={bool(self.pfx_password)}, "
+            f"timestamp_url={self.timestamp_url!r}, machine_store={self.machine_store!r})"
+        )
+
+
+def _parse_version_tuple(version_name: str) -> tuple[int, ...]:
+    """Parses dotted numeric SDK folder names for descending version sorting."""
+    parts = []
+    for token in version_name.split("."):
+        if not token.isdigit():
+            return ()
+        parts.append(int(token))
+    return tuple(parts)
+
+
+def find_signtool(
+    explicit_path: str | Path | None = None,
+    *,
+    program_roots: tuple[str, ...] | None = None,
+) -> Path | None:
+    """Locates Windows signtool.exe from an explicit path, PATH, or Windows Kits."""
+    if explicit_path:
+        candidate = Path(explicit_path).expanduser()
+        return candidate.resolve() if candidate.is_file() else None
+
+    for name in ("signtool", "signtool.exe"):
+        found = shutil.which(name)
+        if found:
+            return Path(found).resolve()
+
+    if program_roots is None:
+        program_roots = (
+            os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+        )
+
+    for root_str in program_roots:
+        if not root_str:
+            continue
+        root = Path(root_str)
+        kits10_bin = root / "Windows Kits" / "10" / "bin"
+        if kits10_bin.is_dir():
+            sdk_dirs = sorted(
+                (p for p in kits10_bin.iterdir() if p.is_dir() and _parse_version_tuple(p.name)),
+                key=lambda p: _parse_version_tuple(p.name),
+                reverse=True,
+            )
+            for sdk_dir in sdk_dirs:
+                for arch in ("x64", "arm64", "x86"):
+                    cand = sdk_dir / arch / "signtool.exe"
+                    if cand.is_file():
+                        return cand.resolve()
+
+        for rel in (
+            Path("Windows Kits") / "10" / "App Certification Kit" / "signtool.exe",
+            Path("Windows Kits") / "8.1" / "bin" / "x64" / "signtool.exe",
+            Path("Windows Kits") / "8.1" / "bin" / "x86" / "signtool.exe",
+        ):
+            cand = root / rel
+            if cand.is_file():
+                return cand.resolve()
+
+    return None
+
+
+def _normalize_thumbprint(raw: str) -> str:
+    """Normalizes and validates a 40-char SHA-1 certificate thumbprint."""
+    cleaned = raw.strip().lstrip("\ufeff\u200e\u200f").replace(" ", "").replace(":", "")
+    if len(cleaned) != 40 or not all(ch in "0123456789abcdefABCDEF" for ch in cleaned):
+        raise ValueError("Thumbprint sertifikat harus berupa 40 karakter heksadesimal (SHA-1).")
+    return cleaned.upper()
+
+
+def _parse_bool_env(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def resolve_signing_config(
+    *,
+    thumbprint: str | None = None,
+    pfx: str | None = None,
+    timestamp_url: str | None = None,
+    sign_command: str | None = None,
+    signtool_path: str | None = None,
+    machine_store: bool = False,
+    environ: Mapping[str, str] | None = None,
+) -> SigningConfig | None:
+    """Resolves optional Authenticode signing settings from CLI flags or env vars."""
+    env = os.environ if environ is None else environ
+    eff_thumb = (thumbprint if thumbprint is not None else env.get("SWARARIA_SIGN_THUMBPRINT", "")).strip()
+    eff_pfx = (pfx if pfx is not None else env.get("SWARARIA_SIGN_PFX", "")).strip()
+    eff_cmd = (sign_command if sign_command is not None else env.get("SWARARIA_SIGN_COMMAND", "")).strip()
+
+    configured_modes = [name for name, val in (("thumbprint", eff_thumb), ("pfx", eff_pfx), ("command", eff_cmd)) if val]
+    if not configured_modes:
+        return None
+    if len(configured_modes) > 1:
+        raise ValueError(
+            "Pilih hanya satu metode signing: --sign-thumbprint, --sign-pfx, atau --sign-command."
+        )
+
+    eff_ts = (timestamp_url if timestamp_url is not None else env.get("SWARARIA_SIGN_TIMESTAMP_URL", "")).strip()
+    if not eff_ts:
+        eff_ts = DEFAULT_SIGN_TIMESTAMP_URL
+    if not (eff_ts.startswith("https://") or eff_ts.startswith("http://")) or any(ch.isspace() for ch in eff_ts):
+        raise ValueError(f"URL timestamp signing tidak valid: {eff_ts}")
+
+    eff_signtool = (signtool_path if signtool_path is not None else env.get("SWARARIA_SIGNTOOL_PATH", "")).strip() or None
+    eff_machine = bool(machine_store or _parse_bool_env(env.get("SWARARIA_SIGN_MACHINE_STORE")))
+
+    if eff_cmd:
+        return SigningConfig(mode="command", command_template=eff_cmd, timestamp_url=eff_ts)
+
+    resolved_signtool = find_signtool(eff_signtool)
+    if resolved_signtool is None:
+        raise FileNotFoundError(
+            "signtool.exe tidak ditemukan. Pasang Windows SDK atau tentukan jalur lewat --sign-tool-path."
+        )
+
+    if eff_thumb:
+        return SigningConfig(
+            mode="thumbprint",
+            thumbprint=_normalize_thumbprint(eff_thumb),
+            timestamp_url=eff_ts,
+            signtool_path=resolved_signtool,
+            machine_store=eff_machine,
+        )
+
+    pfx_file = Path(eff_pfx).expanduser()
+    if not pfx_file.is_file():
+        raise FileNotFoundError(f"File sertifikat PFX tidak ditemukan: {pfx_file}")
+
+    pfx_password = env.get("SWARARIA_SIGN_PFX_PASSWORD") or None
+    return SigningConfig(
+        mode="pfx",
+        pfx_path=pfx_file.resolve(),
+        pfx_password=pfx_password,
+        timestamp_url=eff_ts,
+        signtool_path=resolved_signtool,
+    )
+
+
+def _split_command_template(template: str) -> list[str]:
+    """Splits a custom signing command template into argv tokens without shell expansion."""
+    use_posix = os.name != "nt"
+    tokens = shlex.split(template, posix=use_posix)
+    if not use_posix:
+        cleaned = []
+        for tok in tokens:
+            if len(tok) >= 2 and tok[0] == tok[-1] == '"':
+                cleaned.append(tok[1:-1])
+            else:
+                cleaned.append(tok)
+        tokens = cleaned
+    if not tokens:
+        raise ValueError("Template perintah signing kosong.")
+    return tokens
+
+
+def build_sign_argv(target_path: Path, config: SigningConfig) -> list[str]:
+    """Builds the subprocess argument list for signing target_path."""
+    target_str = str(target_path)
+    if config.mode == "command":
+        if not config.command_template:
+            raise ValueError("Template perintah signing tidak tersedia.")
+        tokens = _split_command_template(config.command_template)
+        has_placeholder = any("{file}" in tok for tok in tokens)
+        argv = [tok.replace("{file}", target_str) for tok in tokens]
+        if not has_placeholder:
+            argv.append(target_str)
+        return argv
+
+    if not config.signtool_path:
+        raise ValueError("Lokasi signtool.exe belum tersedia.")
+
+    argv = [
+        str(config.signtool_path),
+        "sign",
+        "/fd",
+        "SHA256",
+        "/tr",
+        config.timestamp_url,
+        "/td",
+        "SHA256",
+    ]
+    if config.mode == "thumbprint":
+        if config.machine_store:
+            argv.append("/sm")
+        argv.extend(["/sha1", config.thumbprint or "", target_str])
+        return argv
+
+    if config.mode == "pfx":
+        argv.extend(["/f", str(config.pfx_path)])
+        if config.pfx_password:
+            argv.extend(["/p", config.pfx_password])
+        argv.append(target_str)
+        return argv
+
+    raise ValueError(f"Mode signing tidak dikenal: {config.mode}")
+
+
+def _redact_secret(text: str, secret: str | None) -> str:
+    if secret:
+        return text.replace(secret, "***")
+    return text
+
+
+def sign_binary(target_path: Path, config: SigningConfig) -> bool:
+    """Applies an Authenticode digital signature to target_path."""
+    if not target_path.is_file():
+        print(f"[ERROR] File target untuk ditandatangani tidak ditemukan: {target_path}")
+        return False
+
+    argv = build_sign_argv(target_path, config)
+    res = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if res.returncode != 0:
+        details = _redact_secret((res.stderr or res.stdout or "").strip(), config.pfx_password)
+        print(f"[ERROR] Penandatanganan kode gagal untuk {target_path.name} (exit code {res.returncode}).")
+        if details:
+            print(f"        {details}")
+        return False
+
+    print(f"  [OK] Signed (SHA-256): {target_path.name}")
+    return True
+
+
+def build_signing_env(config: SigningConfig, base_env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Builds environment variables passed to Inno Setup's child signing subprocess."""
+    env = dict(os.environ if base_env is None else base_env)
+    for key in _SIGN_ENV_KEYS:
+        env.pop(key, None)
+
+    env["SWARARIA_SIGN_TIMESTAMP_URL"] = config.timestamp_url
+    if config.signtool_path:
+        env["SWARARIA_SIGNTOOL_PATH"] = str(config.signtool_path)
+
+    if config.mode == "thumbprint":
+        env["SWARARIA_SIGN_THUMBPRINT"] = config.thumbprint or ""
+        if config.machine_store:
+            env["SWARARIA_SIGN_MACHINE_STORE"] = "1"
+    elif config.mode == "pfx":
+        env["SWARARIA_SIGN_PFX"] = str(config.pfx_path)
+        if config.pfx_password:
+            env["SWARARIA_SIGN_PFX_PASSWORD"] = config.pfx_password
+    elif config.mode == "command":
+        env["SWARARIA_SIGN_COMMAND"] = config.command_template or ""
+    return env
+
+
+def _escape_inno_dollar(value: str) -> str:
+    return value.replace("$", "$$")
+
+
+def write_sha256_manifest(file_path: Path) -> tuple[str, Path]:
+    """Computes SHA-256 digest for file_path and writes a sidecar .sha256 manifest."""
+    digest = _sha256_file(file_path)
+    manifest_path = Path(f"{file_path}.sha256")
+    manifest_path.write_text(f"{digest} *{file_path.name}\n", encoding="utf-8")
+    return digest, manifest_path
+
+
+def compile_inno_setup_installer(signing_config: SigningConfig | None = None) -> bool:
     """Mengompilasi installer.iss menjadi SwarariaAudioLab_Setup.exe menggunakan Inno Setup."""
     iss_file = PACKAGING_DIR / "installer.iss"
     if not iss_file.is_file():
@@ -254,13 +558,35 @@ def compile_inno_setup_installer() -> bool:
         return False
 
     print(f"\n[5/5] Mengompilasi Setup Wizard Windows via Inno Setup ({iscc_path})...")
-    res = subprocess.run([str(iscc_path), str(iss_file)], cwd=str(BASE_DIR))
+    cmd = [str(iscc_path)]
+    run_env = None
+    if signing_config is not None:
+        py_esc = _escape_inno_dollar(sys.executable)
+        script_esc = _escape_inno_dollar(str(Path(__file__).resolve()))
+        sign_tool_cmd = f"$q{py_esc}$q $q{script_esc}$q --sign-target $q$f$q"
+        cmd.extend(["/DSignToolName=swararia", f"/Sswararia={sign_tool_cmd}"])
+        run_env = build_signing_env(signing_config)
+        print(f"  [INFO] Code signing aktif (mode: {signing_config.mode}) untuk installer & uninstaller.")
+    cmd.append(str(iss_file))
+
+    res = subprocess.run(cmd, cwd=str(BASE_DIR), env=run_env)
     if res.returncode == 0:
         setup_exe = BASE_DIR / "dist" / "SwarariaAudioLab_Setup.exe"
+        digest_info = None
+        if setup_exe.is_file():
+            digest_info = write_sha256_manifest(setup_exe)
         print("\n" + "=" * 68)
         print("  🎉 INSTALLER WIZARD BERHASIL DIBUAT!")
         print("=" * 68)
         print(f"  File Installer : {setup_exe}")
+        if digest_info is not None:
+            digest, manifest_path = digest_info
+            print(f"  SHA-256        : {digest}")
+            print(f"  File Checksum  : {manifest_path}")
+        if signing_config is None:
+            print("  Status Signing : Belum di-sign (SmartScreen mungkin menampilkan 'Unknown publisher').")
+        else:
+            print(f"  Status Signing : Ditandatangani ({signing_config.mode})")
         print("  Tinggal bagikan file 'SwarariaAudioLab_Setup.exe' ke pengguna Windows.")
         print("  Pengguna tinggal double click -> Next -> Next -> Install -> Selesai!")
         print("=" * 68)
@@ -297,7 +623,63 @@ def main() -> int:
         action="store_true",
         help="Hanya unduh/perbarui FFmpeg Shared ke .vendor/bin/ lalu keluar tanpa menjalankan PyInstaller.",
     )
+    parser.add_argument(
+        "--sign-thumbprint",
+        default=None,
+        help="Thumbprint SHA-1 sertifikat di Windows Certificate Store (env: SWARARIA_SIGN_THUMBPRINT).",
+    )
+    parser.add_argument(
+        "--sign-pfx",
+        default=None,
+        help="Jalur file sertifikat .pfx/.p12; password dibaca dari env SWARARIA_SIGN_PFX_PASSWORD (env: SWARARIA_SIGN_PFX).",
+    )
+    parser.add_argument(
+        "--sign-timestamp-url",
+        default=None,
+        help=f"URL server RFC 3161 timestamp (default: {DEFAULT_SIGN_TIMESTAMP_URL}; env: SWARARIA_SIGN_TIMESTAMP_URL).",
+    )
+    parser.add_argument(
+        "--sign-command",
+        default=None,
+        help="Perintah signing kustom berisi placeholder {file} (env: SWARARIA_SIGN_COMMAND).",
+    )
+    parser.add_argument(
+        "--sign-tool-path",
+        default=None,
+        help="Jalur eksplisit ke signtool.exe (env: SWARARIA_SIGNTOOL_PATH).",
+    )
+    parser.add_argument(
+        "--sign-machine-store",
+        action="store_true",
+        help="Gunakan LocalMachine certificate store (/sm) bersama --sign-thumbprint.",
+    )
+    parser.add_argument(
+        "--sign-target",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
+
+    signing_config = None
+    if args.sign_target or not args.fetch_ffmpeg_only:
+        try:
+            signing_config = resolve_signing_config(
+                thumbprint=args.sign_thumbprint,
+                pfx=args.sign_pfx,
+                timestamp_url=args.sign_timestamp_url,
+                sign_command=args.sign_command,
+                signtool_path=args.sign_tool_path,
+                machine_store=args.sign_machine_store,
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"[ERROR] Konfigurasi penandatanganan tidak valid: {exc}")
+            return 1
+
+    if args.sign_target:
+        if signing_config is None:
+            print("[ERROR] --sign-target dipanggil tanpa konfigurasi penandatanganan aktif.")
+            return 1
+        return 0 if sign_binary(Path(args.sign_target).resolve(), signing_config) else 1
 
     print("=" * 68)
     print("  SWARARIA AUDIO LAB — STANDALONE DESKTOP APP BUILDER")
@@ -341,13 +723,19 @@ def main() -> int:
     exe_name = "SwarariaAudioLab.exe" if os.name == "nt" else "SwarariaAudioLab"
     exe_path = DIST_DIR / exe_name
 
+    if signing_config is not None:
+        print("\n[4b/5] Menandatangani binary aplikasi desktop...")
+        if not sign_binary(exe_path, signing_config):
+            return 1
+
     print("\n" + "=" * 68)
     print("  ✅ BUILD DESKTOP APP SELESAI!")
     print("=" * 68)
     print(f"  Folder Distribusi : {DIST_DIR}")
     print(f"  File Executable   : {exe_path}")
     if args.installer:
-        compile_inno_setup_installer()
+        if not compile_inno_setup_installer(signing_config=signing_config):
+            return 1
     else:
         print("\n  Cara membagikan ke orang awam:")
         print("  1. Kompres folder 'dist/SwarariaAudioLab' menjadi file .zip (Portable)")
