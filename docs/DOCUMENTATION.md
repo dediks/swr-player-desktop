@@ -305,7 +305,7 @@ Server lokal [`swararia/server`](../swararia/server) (`handler.py` + `routes/`) 
 | `GET`  | `/api/queue`            | Mengambil status tugas aktif, persentase progress, _live logs_, dan riwayat antrian.                                                                                                                                        |
 | `GET`  | `/api/library`          | Mengambil daftar file audio, ringkasan folder playlist, dan cache QC (mendukung query `?source_dir=...`).                                                                                                                   |
 | `GET`  | `/api/fs/list`          | Menjelajahi daftar direktori lokal & shortcut drive/USB untuk modal pemilih folder (`?path=...`).                                                                                                                           |
-| `GET`  | `/api/check-update`     | Memeriksa rilis terbaru di GitHub Releases (`dediks/audio-library`), membandingkan semver `APP_VERSION`, dan mengekstrak aset `.exe`.                                                                                       |
+| `GET`  | `/api/check-update`     | Memeriksa rilis terbaru di GitHub Releases (`dediks/swr-player-desktop`), membandingkan semver `APP_VERSION`, dan mengekstrak aset `.exe`.                                                                                       |
 | `POST` | `/api/install-update`   | Mengunduh paket installer resmi dan meluncurkan installer untuk pembaruan in-place otomatis (`download_url`).                                                                                                               |
 | `POST` | `/api/fs/mkdir`         | Membuat subfolder baru di dalam direktori tujuan (`parent_dir`, `name`).                                                                                                                                                    |
 | `POST` | `/api/fs/open-explorer` | Membuka folder sumber/playlist di File Manager sistem operasi (`source_dir`, `rel_path`).                                                                                                                                   |
@@ -334,11 +334,11 @@ Menu **Android Remote** pada Player menjalankan listener HTTPS native yang terpi
 
 ## 10. Sistem Pembaruan Otomatis (In-App GitHub Release Auto-Updater)
 
-Aplikasi telah dilengkapi subsistem pembaruan mandiri terintegrasi dengan GitHub Releases repository [dediks/audio-library](https://github.com/dediks/audio-library):
+Aplikasi telah dilengkapi subsistem pembaruan mandiri terintegrasi dengan GitHub Releases repository [dediks/swr-player-desktop](https://github.com/dediks/swr-player-desktop):
 
 ### A. Alur Kerja Pengguna Akhir (User Experience)
 1. **Status Pill Interaktif**: Pada header pojok kanan atas, terdapat pill versi aplikasi (contoh `Ver: v1.0.0`).
-2. **Background Polling**: Saat aplikasi dibuka, thread latar belakang mengecek GitHub API `GET /repos/dediks/audio-library/releases/latest`.
+2. **Background Polling**: Saat aplikasi dibuka, thread latar belakang mengecek GitHub API `GET /repos/dediks/swr-player-desktop/releases/latest`.
 3. **Indikator Update**: Jika versi rilis lebih tinggi dari versi yang sedang berjalan:
    - Badge berubah menjadi warna hijau menyala (`v1.0.1 ⚡`).
    - Notifikasi mengambang muncul memberitahukan tersedianya pembaruan.
@@ -358,7 +358,7 @@ Setiap kali ada perbaikan bug atau penambahan fitur:
    ```
    *(Atau jalankan `packaging/build_installer.bat`)*.
 3. **Terbitkan Rilis di GitHub**:
-   - Buka `https://github.com/dediks/audio-library/releases/new`.
+   - Buka `https://github.com/dediks/swr-player-desktop/releases/new`.
    - Masukkan Tag (contoh: `v1.0.1`), judul rilis, dan ringkasan pembaruan.
    - Unggah (*Attach*) berkas **`dist/SwarariaAudioLab_Setup.exe`**.
    - Klik **Publish release**. Seluruh instalasi pengguna akan otomatis mendeteksi rilis baru ini.
@@ -371,7 +371,7 @@ Setiap kali ada perbaikan bug atau penambahan fitur:
 2. **Zero DOM XSS:** Seluruh kode JavaScript di `swararia/web/static/` menggunakan `document.createElement()`, `document.createElementNS()`, dan `textContent`. Tidak ada penggunaan `innerHTML`, `outerHTML`, `insertAdjacentHTML`, atau `document.write`.
 3. **Strict Path Boundary Validation:** Semua operasi baca/ubah/hapus di [`swararia/core/fs_browser`](../swararia/core/fs_browser) meresolusi path absolut (`Path.resolve()`) dan memverifikasi bahwa target berada tepat di bawah direktori sumber yang diizinkan (mencegah _Path Traversal_ `../`).
 4. **Safe Subprocess Execution:** Pemanggilan `ffmpeg`, `ffprobe`, dan `yt-dlp` selalu menggunakan array argumen terstruktur tanpa `shell=True`.
-5. **Verified Release Sinks:** Endpoint `/api/install-update` hanya menerima permintaan dari klien localhost dan memvalidasi awalan URL unduhan terhadap allow-list domain rilis resmi GitHub (`https://github.com/dediks/audio-library/releases/download/`).
+5. **Verified Release Sinks:** Endpoint `/api/install-update` hanya menerima permintaan dari klien localhost dan memvalidasi awalan URL unduhan terhadap allow-list domain rilis resmi GitHub (`https://github.com/dediks/swr-player-desktop/releases/download/`).
 
 ---
 

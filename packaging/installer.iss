@@ -30,6 +30,7 @@ OutputBaseFilename=SwarariaAudioLab_Setup
 Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=swararia.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

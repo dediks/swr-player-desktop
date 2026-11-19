@@ -130,6 +130,9 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+_win_icon = project_dir / "packaging" / "swararia.ico"
+_exe_icon = str(_win_icon) if sys.platform == "win32" and _win_icon.is_file() else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -146,6 +149,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=_exe_icon,
 )
 
 coll = COLLECT(

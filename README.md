@@ -89,7 +89,7 @@ Saat file ini dijalankan di komputer Windows mana pun:
 
 ## 🔄 Pembaruan Otomatis (In-App GitHub Update Checker)
 
-Aplikasi ini telah dilengkapi fitur **Pemeriksa Pembaruan Otomatis** terintegrasi dengan repository GitHub [dediks/audio-library](https://github.com/dediks/audio-library):
+Aplikasi ini telah dilengkapi fitur **Pemeriksa Pembaruan Otomatis** terintegrasi dengan repository GitHub [dediks/swr-player-desktop](https://github.com/dediks/swr-player-desktop):
 
 1. **Badge Versi di Header**: Menampilkan versi saat ini (misal `v1.0.0`). Pengguna dapat mengkliknya kapan saja untuk memeriksa pembaruan.
 2. **Deteksi Otomatis di Background**: Jika Anda merilis versi baru di GitHub Releases (misal `v1.0.1`), indikator akan menyala hijau (`v1.0.1 ⚡`) dan notifikasi muncul.

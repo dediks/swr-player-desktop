@@ -7,7 +7,7 @@ from swararia.core.task_engine import AudioMetadataCache, TaskQueueManager
 
 
 APP_VERSION = "1.0.0"
-GITHUB_REPO = "dediks/audio-library"
+GITHUB_REPO = "dediks/swr-player-desktop"
 BASE_DIR = fs_browser.BASE_DIR
 RESOURCE_DIR = fs_browser.RESOURCE_DIR
 STATIC_DIR = config.STATIC_DIR

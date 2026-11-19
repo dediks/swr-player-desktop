@@ -1073,7 +1073,7 @@ export function openUpdateModal(isManual = true) {
 
   const loadingWrap = document.createElement('div');
   loadingWrap.className = 'update-loading-wrap';
-  loadingWrap.textContent = 'Memeriksa rilis terbaru dari GitHub dediks/audio-library...';
+  loadingWrap.textContent = 'Memeriksa rilis terbaru dari GitHub dediks/swr-player-desktop...';
   body.appendChild(loadingWrap);
 
   // 3. Footer
@@ -1129,7 +1129,7 @@ export function openUpdateModal(isManual = true) {
 
       const ghLink = document.createElement('a');
       ghLink.className = 'btn-update-secondary';
-      ghLink.href = (data && data.html_url) || 'https://github.com/dediks/audio-library';
+      ghLink.href = (data && data.html_url) || 'https://github.com/dediks/swr-player-desktop';
       ghLink.target = '_blank';
       ghLink.rel = 'noopener noreferrer';
       ghLink.textContent = '🌐 Buka Repository GitHub';
@@ -1202,7 +1202,7 @@ export function openUpdateModal(isManual = true) {
 
       const ghLink = document.createElement('a');
       ghLink.className = 'btn-update-secondary';
-      ghLink.href = data.html_url || 'https://github.com/dediks/audio-library/releases';
+      ghLink.href = data.html_url || 'https://github.com/dediks/swr-player-desktop/releases';
       ghLink.target = '_blank';
       ghLink.rel = 'noopener noreferrer';
       ghLink.textContent = '🌐 Buka Rilis di GitHub';
@@ -1219,7 +1219,7 @@ export function openUpdateModal(isManual = true) {
 
       const sub = document.createElement('p');
       sub.className = 'update-banner-sub';
-      sub.textContent = data.message || 'Sistem telah memeriksa rilis resmi terbaru di GitHub dediks/audio-library.';
+      sub.textContent = data.message || 'Sistem telah memeriksa rilis resmi terbaru di GitHub dediks/swr-player-desktop.';
 
       banner.appendChild(title);
       banner.appendChild(sub);
@@ -1230,7 +1230,7 @@ export function openUpdateModal(isManual = true) {
 
       const ghLink = document.createElement('a');
       ghLink.className = 'btn-update-secondary';
-      ghLink.href = data.html_url || 'https://github.com/dediks/audio-library';
+      ghLink.href = data.html_url || 'https://github.com/dediks/swr-player-desktop';
       ghLink.target = '_blank';
       ghLink.rel = 'noopener noreferrer';
       ghLink.textContent = '🌐 Kunjungi Repository GitHub';

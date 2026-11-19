@@ -40,12 +40,12 @@ def test_check_for_updates_mock_release(mock_urlopen):
         "tag_name": "v1.1.0",
         "name": "Swararia Audio Lab v1.1.0",
         "body": "Fitur baru: Cek Update Otomatis",
-        "html_url": "https://github.com/dediks/audio-library/releases/tag/v1.1.0",
+        "html_url": "https://github.com/dediks/swr-player-desktop/releases/tag/v1.1.0",
         "published_at": "2026-11-10T06:00:00Z",
         "assets": [
             {
                 "name": "SwarariaAudioLab_Setup.exe",
-                "browser_download_url": "https://github.com/dediks/audio-library/releases/download/v1.1.0/SwarariaAudioLab_Setup.exe",
+                "browser_download_url": "https://github.com/dediks/swr-player-desktop/releases/download/v1.1.0/SwarariaAudioLab_Setup.exe",
                 "size": 168000000
             }
         ]
@@ -56,7 +56,7 @@ def test_check_for_updates_mock_release(mock_urlopen):
     assert res["ok"]
     assert res["has_update"]
     assert res["latest_version"] == "v1.1.0"
-    assert res["download_url"] == "https://github.com/dediks/audio-library/releases/download/v1.1.0/SwarariaAudioLab_Setup.exe"
+    assert res["download_url"] == "https://github.com/dediks/swr-player-desktop/releases/download/v1.1.0/SwarariaAudioLab_Setup.exe"
 
 
 if __name__ == "__main__":

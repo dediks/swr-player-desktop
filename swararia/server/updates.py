@@ -30,7 +30,7 @@ def _parse_semver(ver_str: str) -> tuple[int, ...]:
 
 
 def check_for_updates() -> dict:
-    """Queries GitHub Releases API for dediks/audio-library and checks for new versions."""
+    """Queries GitHub Releases API for dediks/swr-player-desktop and checks for new versions."""
     api_url = f"https://api.github.com/repos/{state.GITHUB_REPO}/releases/latest"
     headers = {
         "User-Agent": f"SwarariaAudioLab/{state.APP_VERSION}",
