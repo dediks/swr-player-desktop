@@ -318,7 +318,7 @@ Server lokal [`swararia/server`](../swararia/server) (`handler.py` + `routes/`) 
 | `POST` | `/api/batch-rename`     | Simulasi preview (`preview: true`) atau eksekusi (`preview: false`) Auto-Numbering & Pembersih Tag YouTube (`source_dir`, `rel_paths`, `numbering_mode`, `start_number`, `strip_yt_id`, `strip_junk_tags`, `clean_spaces`). |
 | `POST` | `/api/delete`           | Menghapus satu file, satu folder playlist, atau _batch delete_ banyak file sekaligus (`source_dir`, `rel_path` / `rel_paths`, `is_folder`).                                                                                 |
 
-### Android Native Remote v1 (HTTPS Terpisah di Port Default `8766`)
+### Android Native Remote v1 & Transfer LAN (`8766` / `8765`)
 
 Menu **Android Remote** pada Player menjalankan listener HTTPS native yang terpisah dari endpoint browser HTTP/PIN lama (spesifikasi lengkap & batasan keamanan ada di [SECURE_REMOTE.md](./SECURE_REMOTE.md)):
 
@@ -326,6 +326,9 @@ Menu **Android Remote** pada Player menjalankan listener HTTPS native yang terpi
 - `GET /v1/state`: snapshot playback (`is_playing`, `transport_state`, `current_time`, `duration`, `track_title` yang disanitasi tanpa path/URL).
 - `GET /v1/tracks`: katalog aman untuk aplikasi Android berisi `groups[]` (hingga 64 grup folder, dengan `active_group_id` dan `total_tracks`) serta `tracks[]` (hingga 250 item `{id, title, group_id?}`).
 - `POST /v1/commands` & `GET /v1/commands/<id>`: mendukung `play`, `pause`, `stop`, `fade_out` (3 detik halus), `prev`, `next`, `select_track` (`track_id`, `auto_play`), dan `select_group` (`group_id`).
+- **Sinkronisasi Folder PC ↔ PC & APK Android (`GET /v1/sync/folders`, `POST /v1/sync/manifest`, `GET /v1/sync/files/<file_id>`)**: opsional (*opt-in*, default nonaktif), dapat diarahkan ke folder sumber aktif lewat modal **Android Remote** (`source_dir`), memerlukan izin `control` dan verifikasi TLS certificate pinning baik dari halaman **Stage 4: Organizer** (`/api/sync/*`) maupun aplikasi Android (`Sinkron Folder`). Hanya file terkompresi (`.mp3`, `.m4a`, `.mp4`, `.aac`, `.opus`, `.ogg`, `.webm` maks. `150 MiB`); file `.wav`/`.flac` sementara dilewati dengan peringatan, duplikat SHA-256 dilewati otomatis, bentrok nama di-rename aman, Organizer otomatis me-refresh tabel saat tugas queue `sync` selesai, dan metadata bitrate langsung dipindai cepat (`ffprobe`).
+- **Upload HP → PC via FOH Remote (`POST /api/remote/upload`, `POST /api/remote/upload-config`)**: opsional (*opt-in*, default nonaktif) lewat browser mobile `/player?remote=1` memakai validasi `X-FOH-PIN`, peran `control`, magic bytes + `ffprobe`, deduplikasi SHA-256, auto-probe cepat metadata, dan batas 150 MiB/file (WAV/FLAC sementara dikecualikan dengan peringatan).
+- **Upload APK Android → PC via Native HTTPS (`POST /v1/library/upload`)**: opsional (*opt-in*, default nonaktif di modal **Android Remote** dengan pilihan tujuan `library/inbox` atau folder aktif Player), menerima unggahan biner `application/octet-stream` dari APK Android berizin `control` lengkap dengan validasi SHA-256, magic bytes + `ffprobe`, pengecualian `.wav`/`.flac`, dedup, auto-rename bentrok, dan auto-probe cepat metadata.
 
 ---
 

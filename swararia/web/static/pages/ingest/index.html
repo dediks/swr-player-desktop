@@ -219,21 +219,21 @@
               <input type="radio" name="audioFormat" value="opus" checked>
               <span class="ing-seg-body">
                 <span class="ing-seg-title">Opus <span class="ing-seg-tag emerald">BEST</span></span>
-                <span class="ing-seg-desc">48 kHz &middot; lossless remux</span>
+                <span class="ing-seg-desc" id="opusFormatDesc">48 kHz &middot; ~160/256 kbps</span>
               </span>
             </label>
             <label class="ing-seg">
               <input type="radio" name="audioFormat" value="mp3_320k">
               <span class="ing-seg-body">
                 <span class="ing-seg-title">MP3 320</span>
-                <span class="ing-seg-desc">CBR &middot; CDJ / USB lama</span>
+                <span class="ing-seg-desc">320 kbps CBR &middot; CDJ / USB</span>
               </span>
             </label>
             <label class="ing-seg">
               <input type="radio" name="audioFormat" value="mp3_vbr0">
               <span class="ing-seg-body">
                 <span class="ing-seg-title">MP3 V0</span>
-                <span class="ing-seg-desc">VBR &middot; ukuran efisien</span>
+                <span class="ing-seg-desc">VBR ~245 kbps &middot; efisien</span>
               </span>
             </label>
           </div>
@@ -350,6 +350,7 @@
             </div>
             <div class="ing-now-title" id="activeJobTitle">Tidak ada unduhan aktif</div>
             <div class="ing-now-sub" id="jobUrlLabel">Tambahkan lagu di panel kiri untuk memulai.</div>
+            <div class="ing-qitem-badges hidden" id="activeJobStreamBadges"></div>
             <div class="ing-progress" role="progressbar" aria-labelledby="activeJobTitle" aria-valuemin="0" aria-valuemax="100" id="progressBar">
               <div class="ing-progress-fill" id="progressFill" style="width: 0%;"></div>
             </div>
@@ -423,6 +424,8 @@
             <div class="playlist-inspect-tag-row">
               <span class="ing-kind playlist" id="playlistInspectBadge">≡ Playlist</span>
               <span class="playlist-inspect-track-count mono-stat" id="playlistInspectCount">0 lagu</span>
+              <span class="ing-kind hidden" id="playlistInspectTierFlag"></span>
+              <span class="ing-result-spec mono-stat hidden" id="playlistInspectSpec" data-song-spec="1"></span>
             </div>
             <h3 id="playlistInspectTitle">Daftar Lagu</h3>
             <span class="playlist-inspect-sub" id="playlistInspectSub"></span>

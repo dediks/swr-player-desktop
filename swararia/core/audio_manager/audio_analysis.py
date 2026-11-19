@@ -25,6 +25,121 @@ def sha256_file(path: Path) -> str:
     return result.hexdigest()
 
 
+def classify_audio_quality_tier(
+    codec: str = "",
+    bitrate_kbps: float | str | None = None,
+    ext: str = "",
+    spectral_status: str = "",
+    source_format_id: str = "",
+) -> dict:
+    """Classifies a local audio file's quality tier and YouTube Premium highest-quality status."""
+    codec_low = (codec or "").strip().lower()
+    ext_low = (ext or "").strip().lower()
+    spec_upper = (spectral_status or "").strip().upper()
+    src_fmt = (source_format_id or "").strip()
+    br_val = get_float(bitrate_kbps)
+    br_round = round(br_val) if br_val and br_val > 0 else None
+
+    is_lossless = (
+        codec_low in constants.LOSSLESS
+        or codec_low.startswith("pcm_")
+        or ext_low in (".flac", ".wav", ".alac", ".aif", ".aiff")
+    )
+    if is_lossless:
+        return {
+            "quality_tier": "lossless",
+            "quality_label": "LOSSLESS",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": False,
+            "is_highest_quality": True,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    if spec_upper == "FAKE_HQ":
+        return {
+            "quality_tier": "fake_hq",
+            "quality_label": "FAKE HQ",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": False,
+            "is_highest_quality": False,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    is_native_yt_container = ext_low in (".opus", ".webm", ".ogg", ".m4a", ".aac") or codec_low in ("opus", "aac")
+    src_meta = constants.YOUTUBE_STREAM_TIERS_META.get(src_fmt) if (src_fmt and is_native_yt_container) else None
+    if src_meta:
+        is_prem = bool(src_meta.get("is_premium"))
+        is_max = bool(src_meta.get("is_highest_quality"))
+        return {
+            "quality_tier": str(src_meta.get("tier") or "other"),
+            "quality_label": str(src_meta.get("short_label") or ""),
+            "bitrate_kbps": br_round or src_meta.get("bitrate_kbps"),
+            "is_youtube_premium": is_prem,
+            "is_highest_quality": is_max,
+            "quality_verified_source": True,
+            "source_format_id": src_fmt,
+        }
+
+    br_num = float(br_val or 0.0)
+    is_opus = codec_low == "opus" or ext_low in (".opus", ".webm")
+    is_aac = codec_low == "aac" or ext_low in (".m4a", ".aac")
+    if (is_opus and br_num >= 195.0) or (is_aac and br_num >= 220.0):
+        return {
+            "quality_tier": "yt_premium_max",
+            "quality_label": "YT PREMIUM MAX",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": True,
+            "is_highest_quality": True,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    if br_num >= 192.0:
+        return {
+            "quality_tier": "hq",
+            "quality_label": f"HQ {br_round}k",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": False,
+            "is_highest_quality": False,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    if br_num >= 135.0:
+        return {
+            "quality_tier": "standard",
+            "quality_label": f"{'PUB' if is_opus else 'STD'} {br_round}k",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": False,
+            "is_highest_quality": False,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    if br_num > 0.0:
+        return {
+            "quality_tier": "low",
+            "quality_label": f"LOW {br_round}k",
+            "bitrate_kbps": br_round,
+            "is_youtube_premium": False,
+            "is_highest_quality": False,
+            "quality_verified_source": False,
+            "source_format_id": src_fmt,
+        }
+
+    return {
+        "quality_tier": "unknown",
+        "quality_label": "",
+        "bitrate_kbps": None,
+        "is_youtube_premium": False,
+        "is_highest_quality": False,
+        "quality_verified_source": False,
+        "source_format_id": src_fmt,
+    }
+
+
 def metadata(path: Path) -> dict:
     proc = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],

@@ -23,6 +23,9 @@
           <span class="remote-conn-status" id="remoteConnStatus">Connecting...</span>
         </div>
         <div class="remote-banner-actions">
+          <button type="button" id="btnOpenPhoneUpload" class="btn-accent btn-sm hidden" title="Unggah lagu dari HP ke PC">
+            <span>Unggah ke PC</span>
+          </button>
           <button type="button" id="btnRemotePinPrompt" class="btn-nudge remote-pin-btn" title="Enter 4-Digit PIN">
             <span id="remotePinBtnText">PIN: ----</span>
           </button>
@@ -55,6 +58,7 @@
               <span id="remoteHeaderLabel">Remote</span>
             </button>
             <button type="button" class="btn-remote-trigger hidden" id="btnOpenAndroidRemoteModal" title="Native Android Remote">Android Remote</button>
+            <button type="button" class="btn-remote-trigger hidden" id="btnOpenPhoneUploadConfig" title="Pengaturan Upload Audio dari HP ke PC">Unggah HP</button>
             <span class="foh-state-pill standby" id="playerStateBadge">STANDBY</span>
             <span class="panel-badge" id="activePlayModeBadge">CUE (AUTO-STOP)</span>
           </div>
@@ -467,6 +471,7 @@
               <option value="SAFE">FOH Ready (&le; -1.0 dBTP)</option>
               <option value="TRIM">Preamp Trim (-1.0 to 0 dBTP)</option>
               <option value="CLIPPING">Clipping (&gt; 0 dBTP)</option>
+              <option value="YT_PREMIUM">YouTube Premium Max (~256k)</option>
               <option value="FAKE_HQ">Fake HQ (&lt;16 kHz Cutoff)</option>
             </select>
             <select id="filterFormat" class="toolbar-select" aria-label="Filter Audio Format">
@@ -494,7 +499,7 @@
             <tr>
               <th scope="col" class="col-play-actions">FOH Transport</th>
               <th scope="col">Audio Track</th>
-              <th scope="col">Codec &amp; Sample Rate</th>
+              <th scope="col">Codec, Bitrate &amp; Sample Rate</th>
               <th scope="col">Spectrum</th>
               <th scope="col">True Peak (dBTP)</th>
               <th scope="col">Loudness (LUFS)</th>
@@ -733,6 +738,8 @@
         <p id="nativeInviteStatus" class="native-help hidden"></p>
         <section id="nativeDeviceSection" class="native-screen hidden"><h4 id="nativeDeviceTitle">Perangkat sesi ini</h4><div id="nativeDevices" class="native-screen"></div><div class="native-connected-note">Menutup panel ini tidak menghentikan musik PC.</div></section>
         <div id="nativeMediaBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeMediaTransfer"><span><strong>Izinkan Android unduh lagu</strong><small>Hanya perangkat berizin Kontrol penuh yang dapat mengunduh file audio dari katalog sesi ini ke Library HP.</small></span></label></div>
+        <div id="nativeSyncBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeFolderSync"><span><strong>Izinkan sinkronisasi folder &amp; playlist (HTTPS)</strong><small>Perangkat Swararia (PC / Android Kontrol penuh) dapat menarik folder playlist terkompresi (.mp3/.m4a/.opus/.webm maks. 150 MiB). WAV &amp; FLAC sementara dilewati.</small></span></label><div class="native-path-row"><span class="native-path-label">Sumber sync: <code id="nativeSyncSourceLabel">library/inbox</code></span><div class="native-path-actions"><button type="button" id="btnNativeSyncUseSource" class="btn-chip">Folder Aktif</button><button type="button" id="btnNativeSyncResetInbox" class="btn-chip">Inbox</button></div></div></div>
+        <div id="nativeUploadBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeAndroidUpload"><span><strong>Izinkan Android unggah lagu (HTTPS)</strong><small>Aplikasi Android (Kontrol penuh) dapat mengunggah audio terkompresi (.mp3/.m4a/.opus/.webm maks. 150 MiB) ke folder PC. WAV &amp; FLAC ditolak pada fase ini.</small></span></label><div class="native-path-row"><span class="native-path-label">Tujuan unggah: <code id="nativeUploadDestLabel">library/inbox</code></span><div class="native-path-actions"><button type="button" id="btnNativeUploadUseSource" class="btn-chip">Folder Aktif</button><button type="button" id="btnNativeUploadResetInbox" class="btn-chip">Inbox</button></div></div></div>
         <div id="nativeInviteActions" class="native-invite-actions hidden"><button type="button" id="nativeInviteClose" class="btn-text native-link hidden" disabled>Tutup kode</button><button type="button" id="nativeInviteOpen" class="btn-secondary native-add hidden" disabled>Buat kode pairing</button></div>
         <details id="nativeSettings" class="native-details"><summary><span id="nativeSettingsIcon" class="native-title-icon"></span>Setelan koneksi <span class="native-summary-hint">IP, port, detail keamanan</span></summary><div class="native-detail-body">
           <div class="native-fields"><label>IP LAN PC<input id="nativeBindIp" list="nativeIpList" class="toolbar-input" type="text" placeholder="IP privat pada PC ini" autocomplete="off" spellcheck="false"><datalist id="nativeIpList"></datalist></label><label>Port<input id="nativePort" class="toolbar-input" type="number" min="1" max="65535" value="8766"></label></div>
@@ -744,6 +751,88 @@
         <p id="nativeFeedback" class="native-feedback" role="status" aria-live="polite"></p>
       </div>
       <div class="modal-footer remote-modal-footer"><span class="native-footer-note">Musik tetap di PC</span><button type="button" id="nativeStop" class="btn-text native-link hidden" disabled>Nonaktifkan Android Remote</button><button type="button" id="btnCancelAndroidRemoteModal" class="btn-secondary">Tutup</button></div>
+    </div>
+  </div>
+
+  <!-- PC Operator Phone Upload Config Modal -->
+  <div class="modal-backdrop hidden" id="phoneUploadConfigModal" role="dialog" aria-modal="true" aria-labelledby="phoneUploadConfigModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="phoneUploadConfigModalTitle">Upload Audio dari HP ke PC</h3>
+        <button type="button" id="btnClosePhoneUploadConfig" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="native-media-box">
+          <label class="native-media-toggle">
+            <input type="checkbox" id="chkPhoneUploadEnabled">
+            <span>
+              <strong>Izinkan HP mengunggah lagu lewat FOH Remote</strong>
+              <small>HP terhubung (PIN valid &amp; mode Kontrol) dapat mengirim lagu ke folder playlist di PC ini.</small>
+            </span>
+          </label>
+        </div>
+        <div class="transfer-warning-strip">
+          <strong>Catatan Fase Ini:</strong> Hanya file audio terkompresi (.mp3, .m4a, .mp4, .aac, .opus, .ogg, .webm) hingga 150 MiB/file yang diterima. File <strong>.wav &amp; .flac</strong> sementara ditolak/dilewati; duplikat SHA-256 dilewati otomatis.
+        </div>
+        <div class="remote-status-strip">
+          <div class="remote-status-info">
+            <span class="remote-status-title">Tujuan Root di PC</span>
+            <code id="phoneUploadConfigDestLabel" class="source-location-badge">library/inbox</code>
+          </div>
+          <div class="transfer-btn-pair">
+            <button type="button" id="btnPhoneUploadUseActiveSource" class="btn-chip">Pakai Folder Aktif</button>
+            <button type="button" id="btnPhoneUploadResetInbox" class="btn-chip">Reset Inbox</button>
+          </div>
+        </div>
+        <p id="phoneUploadConfigFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPhoneUploadConfig" class="btn-secondary">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Smartphone Browser Audio Upload Modal (?remote=1) -->
+  <div class="modal-backdrop hidden" id="phoneUploadModal" role="dialog" aria-modal="true" aria-labelledby="phoneUploadModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="phoneUploadModalTitle">Unggah Lagu dari HP ke PC</h3>
+        <button type="button" id="btnClosePhoneUpload" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="remote-status-strip">
+          <span class="remote-status-title">Root Tujuan PC:</span>
+          <code id="phoneUploadDestBadge" class="source-location-badge">library/inbox</code>
+        </div>
+        <div class="transfer-warning-strip">
+          <strong>Peringatan Format:</strong> File <strong>.wav</strong> dan <strong>.flac</strong> belum didukung pada fase ini dan akan dilewati. Gunakan .mp3, .m4a, .aac, .opus, .ogg, atau .webm (maks. 150 MiB/file).
+        </div>
+        <div class="field-group compact-field">
+          <label for="phoneUploadPlaylistSelect" class="field-label">Folder Playlist Tujuan</label>
+          <select id="phoneUploadPlaylistSelect" class="toolbar-select"></select>
+        </div>
+        <div id="phoneUploadCustomSubfolderWrap" class="field-group compact-field hidden">
+          <label for="phoneUploadCustomSubfolder" class="field-label">Nama Folder Playlist Baru</label>
+          <input type="text" id="phoneUploadCustomSubfolder" class="toolbar-input" placeholder="Misal: Opening Wedding / Setlist 2" maxlength="80">
+        </div>
+        <div class="field-group compact-field">
+          <label for="phoneUploadFileInput" class="field-label">Pilih File Audio (maks. 20 file/batch)</label>
+          <input type="file" id="phoneUploadFileInput" class="toolbar-input" multiple accept=".mp3,.m4a,.mp4,.aac,.opus,.ogg,.webm">
+        </div>
+        <div id="phoneUploadWarningBanner" class="transfer-warning-strip is-warn hidden">
+          <span id="phoneUploadWarningText"></span>
+        </div>
+        <div id="phoneUploadFileList" class="transfer-file-list"></div>
+        <div id="phoneUploadProgressWrap" class="transfer-progress-wrap hidden">
+          <div class="transfer-progress-track"><div id="phoneUploadProgressBar" class="transfer-progress-fill"></div></div>
+          <span id="phoneUploadProgressText" class="transfer-progress-label">0%</span>
+        </div>
+        <p id="phoneUploadFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPhoneUpload" class="btn-secondary">Tutup</button>
+        <button type="button" id="btnStartPhoneUpload" class="btn-primary" disabled>Unggah ke PC</button>
+      </div>
     </div>
   </div>
 </body>

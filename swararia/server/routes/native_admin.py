@@ -6,7 +6,7 @@ import os
 from urllib.parse import urlparse
 
 from swararia.remote.secure_remote import RemoteError
-from swararia.server import network
+from swararia.server import network, state
 
 
 class NativeAdminMixin:
@@ -52,6 +52,16 @@ class NativeAdminMixin:
                 req_port = cand_port
         return http_port, req_port, req_ip, False, None
 
+    @staticmethod
+    def _resolve_optional_admin_dir(raw_path):
+        if raw_path is None or (isinstance(raw_path, str) and not raw_path.strip()):
+            return '', 'library/inbox'
+        resolved = state.resolve_safe_dir(str(raw_path), state.INBOX_DIR, must_exist=True)
+        if resolved.is_symlink():
+            raise ValueError('Folder symlink tidak diizinkan.')
+        label = 'library/inbox' if resolved == state.INBOX_DIR.resolve() else resolved.name
+        return str(resolved), label
+
     def native_admin(self, payload):
         remote = self.server.secure_remote
         try:
@@ -60,7 +70,9 @@ class NativeAdminMixin:
                       'invite_open': {'action'}, 'invite_close': {'action'},
                       'approve': {'action', 'device_id', 'role'},
                       'revoke': {'action', 'device_id'}, 'deny': {'action', 'device_id'},
-                      'set_media_transfer': {'action', 'enabled'}}
+                      'set_media_transfer': {'action', 'enabled'},
+                      'set_sync_enabled': {'action', 'enabled', 'source_dir'},
+                      'set_upload_enabled': {'action', 'enabled', 'dest_dir'}}
             if not isinstance(op, str) or op not in fields or set(payload) - fields[op]:
                 raise RemoteError('invalid_admin_action', 400)
             if op == 'start':
@@ -96,6 +108,18 @@ class NativeAdminMixin:
                 remote.revoke(payload.get('device_id'), deny=op == 'deny')
             elif op == 'set_media_transfer':
                 remote.set_media_transfer(payload.get('enabled'))
+            elif op == 'set_sync_enabled':
+                src_dir = None
+                src_label = None
+                if 'source_dir' in payload:
+                    src_dir, src_label = self._resolve_optional_admin_dir(payload.get('source_dir'))
+                remote.set_sync_enabled(payload.get('enabled'), source_dir=src_dir, source_label=src_label)
+            elif op == 'set_upload_enabled':
+                dest_dir = None
+                dest_label = None
+                if 'dest_dir' in payload:
+                    dest_dir, dest_label = self._resolve_optional_admin_dir(payload.get('dest_dir'))
+                remote.set_upload_enabled(payload.get('enabled'), dest_dir=dest_dir, dest_label=dest_label)
             self.send_json(200, self._build_native_admin_status(force_refresh=False))
         except RemoteError as exc:
             self.send_json(exc.status, {'code': exc.code})

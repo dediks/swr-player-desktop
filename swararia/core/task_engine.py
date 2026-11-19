@@ -13,6 +13,7 @@ from pathlib import Path
 from swararia.core import audio_manager
 from swararia.core import fs_browser
 from swararia.core import splitter_engine
+from swararia.core import transfer
 
 
 class AudioMetadataCache:
@@ -260,6 +261,20 @@ class AudioMetadataCache:
             folder_name = str(rel.parent) if rel.parent != Path(".") else ""
             ext = p.suffix.lower()
 
+            if merged_qc is not None:
+                tier_info = audio_manager.classify_audio_quality_tier(
+                    codec=str(merged_qc.get("codec") or ""),
+                    bitrate_kbps=merged_qc.get("bitrate_kbps"),
+                    ext=ext,
+                    spectral_status=str(merged_qc.get("spectral_status") or ""),
+                    source_format_id=str(merged_qc.get("source_format_id") or ""),
+                )
+                merged_qc["quality_tier"] = tier_info["quality_tier"]
+                merged_qc["quality_label"] = tier_info["quality_label"]
+                merged_qc["is_youtube_premium"] = tier_info["is_youtube_premium"]
+                merged_qc["is_highest_quality"] = tier_info["is_highest_quality"]
+                merged_qc["quality_verified_source"] = tier_info["quality_verified_source"]
+
             if folder_name:
                 top_folder = rel.parts[0]
                 if top_folder not in playlist_counts:
@@ -351,6 +366,7 @@ class TaskQueueManager:
         self.queue: list[dict] = []
         self.current_task: dict | None = None
         self.history: list[dict] = []
+        self.job_pullers: dict[str, object] = {}
         self.metadata_cache = metadata_cache
         self.inbox_dir = inbox_dir
         self.archive_file = archive_file
@@ -854,6 +870,22 @@ class TaskQueueManager:
         skipped_files: list[str] = []
         last_error_line = ""
         last_run_res: dict | None = None
+        winning_run_res: dict | None = None
+
+        def _on_download_log(msg: str) -> None:
+            self.append_log(task, msg)
+            tier_m = re.match(r"\[STREAM TIER\]\s+Format\s+([^\s:]+):", msg)
+            if tier_m:
+                tier_meta = audio_manager.classify_format_tier(tier_m.group(1))
+                task["stream_info"] = {
+                    "format_id": tier_meta.get("format_id", ""),
+                    "codec": tier_meta.get("codec", ""),
+                    "bitrate_kbps": tier_meta.get("bitrate_kbps"),
+                    "sample_rate_hz": tier_meta.get("sample_rate_hz"),
+                    "is_youtube_premium": bool(tier_meta.get("is_premium")),
+                    "is_highest_quality": bool(tier_meta.get("is_highest_quality")),
+                    "tier_label": tier_meta.get("short_label") or tier_meta.get("label") or "",
+                }
 
         for try_idx, with_cookies in enumerate(attempts):
             cookies_path_for_try = self.cookies_file if (with_cookies and self.cookies_file.is_file()) else None
@@ -899,13 +931,14 @@ class TaskQueueManager:
                     cmd,
                     env=run_env,
                     existing_by_vid=existing_by_vid,
-                    on_log=lambda msg: self.append_log(task, msg),
+                    on_log=_on_download_log,
                     on_progress=lambda pct: task.__setitem__("progress", pct),
                 )
                 last_run_res = run_res
                 skipped_files = run_res["skipped_files"]
                 last_error_line = run_res["last_error_line"]
                 if run_res["returncode"] == 0:
+                    winning_run_res = run_res
                     success = True
                     break
                 final_code = run_res["returncode"]
@@ -952,12 +985,13 @@ class TaskQueueManager:
                     recovery_cmd,
                     env=run_env,
                     existing_by_vid=existing_by_vid,
-                    on_log=lambda msg: self.append_log(task, msg),
+                    on_log=_on_download_log,
                     on_progress=lambda pct: task.__setitem__("progress", pct),
                 )
                 if rec_res["skipped_files"]:
                     skipped_files = rec_res["skipped_files"]
                 if rec_res["returncode"] == 0:
+                    winning_run_res = rec_res
                     success = True
                     last_error_line = ""
                 else:
@@ -977,20 +1011,81 @@ class TaskQueueManager:
             key=lambda x: x.name,
         )
         clipping_count = 0
+        video_formats_map = (winning_run_res or {}).get("video_formats") or {}
+        fallback_stream_tier = (winning_run_res or {}).get("stream_tier") or {}
+        verified_bitrates: list[float] = []
+        premium_verified_count = 0
+        last_verified_codec = ""
+        last_verified_sr = ""
+        last_verified_fmt = str((winning_run_res or {}).get("selected_format_id") or "")
 
         if new_files and shutil.which("ffprobe"):
             self.metadata_cache.probe_files_fast(new_files, include_spectral=False)
             for nf in new_files:
                 try:
-                    info = audio_manager.metadata(nf)
+                    with self.metadata_cache.lock:
+                        cached_meta = self.metadata_cache.meta_results.get(str(nf))
+                    info = dict(cached_meta) if cached_meta else audio_manager.metadata(nf)
+                    m_vid = re.search(r"\[([A-Za-z0-9_-]{11})\]$", nf.stem)
+                    vid_key = m_vid.group(1) if m_vid else ""
+                    src_tier = video_formats_map.get(vid_key) or fallback_stream_tier or {}
+                    src_fmt_id = str(src_tier.get("format_id") or "") if nf.suffix.lower() != ".mp3" else ""
+                    if src_fmt_id:
+                        with self.metadata_cache.lock:
+                            cached_entry = self.metadata_cache.meta_results.get(str(nf))
+                            if cached_entry is not None:
+                                cached_entry["source_format_id"] = src_fmt_id
+                        self.metadata_cache.invalidate_dir_cache(nf.parent)
+                    q_tier = audio_manager.classify_audio_quality_tier(
+                        codec=str(info.get("codec") or ""),
+                        bitrate_kbps=info.get("bitrate_kbps"),
+                        ext=nf.suffix.lower(),
+                        source_format_id=src_fmt_id,
+                    )
+                    br_num = audio_manager.get_float(info.get("bitrate_kbps"))
+                    if br_num and br_num > 0:
+                        verified_bitrates.append(br_num)
+                    if q_tier.get("is_youtube_premium") and q_tier.get("is_highest_quality"):
+                        premium_verified_count += 1
+                    last_verified_codec = str(info.get("codec") or last_verified_codec)
+                    last_verified_sr = str(info.get("sample_rate_hz") or last_verified_sr)
+                    if src_fmt_id:
+                        last_verified_fmt = src_fmt_id
+
                     sr = f"{info['sample_rate_hz']} Hz" if info.get("sample_rate_hz") else "?"
                     br = f"{info['bitrate_kbps']} kbps" if info.get("bitrate_kbps") else "VBR"
+                    prem_flag = " | ★ HIGHEST QUALITY (YT PREMIUM)" if q_tier.get("is_highest_quality") and q_tier.get("is_youtube_premium") else ""
                     self.append_log(
                         task,
-                        f"[STREAM VERIFIED] {nf.name} | Codec: {info['codec']} | Sample Rate: {sr} | Bitrate: {br}",
+                        f"[STREAM VERIFIED] {nf.name} | Codec: {info['codec']} | Sample Rate: {sr} | Bitrate: {br}{prem_flag}",
                     )
                 except Exception:
                     pass
+
+        avg_bitrate = round(sum(verified_bitrates) / len(verified_bitrates)) if verified_bitrates else (
+            fallback_stream_tier.get("bitrate_kbps")
+        )
+        has_yt_premium_max = bool(
+            premium_verified_count > 0
+            or (
+                not verified_bitrates
+                and fallback_stream_tier.get("is_premium")
+                and fallback_stream_tier.get("is_highest_quality")
+                and audio_format in ("opus", "native")
+            )
+        )
+        if verified_bitrates or last_verified_fmt:
+            task["stream_info"] = {
+                "format_id": last_verified_fmt,
+                "codec": last_verified_codec or fallback_stream_tier.get("codec", ""),
+                "sample_rate_hz": last_verified_sr or fallback_stream_tier.get("sample_rate_hz", ""),
+                "bitrate_kbps": avg_bitrate,
+                "is_youtube_premium": has_yt_premium_max,
+                "is_highest_quality": has_yt_premium_max,
+                "tier_label": "YT PREMIUM MAX" if has_yt_premium_max else (fallback_stream_tier.get("short_label") or ""),
+                "premium_count": premium_verified_count,
+                "total_verified": len(new_files),
+            }
 
         if new_files and auto_scan and shutil.which("ffmpeg") and shutil.which("ffprobe"):
             self.append_log(task, "Initiating audio QC audit (EBU R128 & True Peak)...")
@@ -1010,7 +1105,22 @@ class TaskQueueManager:
 
         dl_count = len(new_files)
         skip_count = len(skipped_files)
-        stats = {"downloaded": dl_count, "skipped": skip_count, "clipping": clipping_count}
+        stats = {
+            "downloaded": dl_count,
+            "skipped": skip_count,
+            "clipping": clipping_count,
+            "bitrate_kbps": avg_bitrate,
+            "is_youtube_premium": has_yt_premium_max,
+            "is_highest_quality": has_yt_premium_max,
+            "format_id": last_verified_fmt,
+        }
+        quality_note_parts = []
+        if avg_bitrate:
+            prefix_br = "~" if dl_count > 1 else ""
+            quality_note_parts.append(f"{prefix_br}{avg_bitrate} kbps")
+        if has_yt_premium_max:
+            quality_note_parts.append("★ YT Premium Highest Quality")
+        quality_note = f" • {' • '.join(quality_note_parts)}" if quality_note_parts else ""
 
         if success:
             self.append_log(task, "Extraction finished successfully.")
@@ -1030,7 +1140,7 @@ class TaskQueueManager:
                 outcome = "WARNING" if clipping_count > 0 else "PARTIAL"
                 title = "Unduhan Selesai (Sebagian Sudah Ada)"
                 qc_note = f" • ⚠️ {clipping_count} lagu terdeteksi Clipping Hazard (> 0 dBTP)!" if clipping_count > 0 else ""
-                summary = f"{dl_count} lagu baru berhasil diunduh, {skip_count} lagu dilewati karena sudah ada di Library.{qc_note}"
+                summary = f"{dl_count} lagu baru berhasil diunduh, {skip_count} lagu dilewati karena sudah ada di Library.{quality_note}{qc_note}"
             else:
                 outcome = "WARNING" if clipping_count > 0 else "SUCCESS"
                 title = "Unduhan & QC Selesai (Perhatian Headroom)" if clipping_count > 0 else "Unduhan Selesai"
@@ -1040,7 +1150,7 @@ class TaskQueueManager:
                     else f"Berhasil mengunduh {dl_count} file audio baru ke Inbox."
                 )
                 qc_note = f" • ⚠️ {clipping_count} lagu memiliki True Peak > 0 dBTP (Clipping Hazard)." if clipping_count > 0 else ""
-                summary = base_msg + qc_note
+                summary = base_msg + quality_note + qc_note
 
             self.finish_task(
                 task,
@@ -1252,6 +1362,255 @@ class TaskQueueManager:
                 summary=str(exc),
             )
 
+    def enqueue_sync(
+        self,
+        *,
+        peer_label: str,
+        dest_dir: Path,
+        items: list[dict],
+        wav_flac_skipped: int = 0,
+        oversized_skipped: int = 0,
+        pull_file_fn=None,
+    ) -> tuple[int, dict]:
+        """Validates parameters and enqueues a PC <-> PC pinned HTTPS folder sync job."""
+        if pull_file_fn is None:
+            return 400, {"error": "Handler penarik sinkronisasi tidak tersedia."}
+        if not isinstance(items, list) or not items:
+            msg = "Tidak ada file audio yang dapat disinkronkan."
+            if wav_flac_skipped > 0:
+                msg = f"{wav_flac_skipped} file .wav/.flac dilewati karena WAV/FLAC belum didukung pada fase ini."
+            return 400, {"error": msg}
+
+        try:
+            dest_resolved = fs_browser.resolve_safe_dir(str(dest_dir), self.inbox_dir, must_exist=True)
+        except Exception as exc:
+            return 400, {"error": str(exc)}
+
+        safe_items: list[dict] = []
+        extra_wav_flac = 0
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            file_id = str(raw.get("file_id") or "").strip()
+            rel_folder = str(raw.get("rel_folder") or "").strip()
+            name = str(raw.get("name") or "").strip()
+            sha = str(raw.get("sha256") or "").strip().lower()
+            size_bytes = int(raw.get("size_bytes") or 0)
+            if not file_id or not name:
+                continue
+            try:
+                clean_name, ext = transfer.sanitize_transfer_filename(name)
+                transfer.sanitize_subfolder_parts(rel_folder)
+            except transfer.TransferValidationError as exc:
+                if exc.code == "wav_flac_excluded":
+                    extra_wav_flac += 1
+                continue
+            if size_bytes <= 0 or size_bytes > transfer.MAX_TRANSFER_BYTES:
+                continue
+            safe_items.append({
+                "file_id": file_id,
+                "rel_folder": rel_folder,
+                "name": clean_name,
+                "ext": ext,
+                "sha256": sha,
+                "size_bytes": size_bytes,
+            })
+
+        total_wav_flac = int(wav_flac_skipped) + extra_wav_flac
+        if not safe_items:
+            msg = "Tidak ada lagu terkompresi (.mp3/.m4a/.opus/.webm) yang siap disinkronkan."
+            if total_wav_flac > 0:
+                msg = f"{total_wav_flac} file .wav/.flac dilewati karena WAV/FLAC belum didukung pada fase sinkronisasi ini."
+            return 400, {"error": msg}
+
+        job_id = f"sync_{int(time.time() * 1000)}"
+        label = f"Sinkronisasi LAN ({peer_label}) -> {dest_resolved.name} ({len(safe_items)} lagu)"
+        job = {
+            "id": job_id,
+            "type": "sync",
+            "url": label,
+            "dest_dir": str(dest_resolved),
+            "items": safe_items,
+            "wav_flac_skipped": total_wav_flac,
+            "oversized_skipped": int(oversized_skipped),
+            "status": "QUEUED",
+            "progress": 0,
+            "created_at": time.time(),
+        }
+        with self.lock:
+            self.job_pullers[job_id] = pull_file_fn
+            self.queue.append(job)
+
+        return 200, {
+            "message": f"Tugas ({label}) ditambahkan ke antrian.",
+            "job_id": job_id,
+            "wav_flac_skipped": total_wav_flac,
+        }
+
+    def execute_sync_task(self, task: dict) -> None:
+        """Executes a queued PC <-> PC HTTPS folder sync job with SHA-256 verification."""
+        job_id = str(task.get("id") or "")
+        with self.lock:
+            pull_fn = self.job_pullers.pop(job_id, None)
+
+        items = task.get("items") or []
+        dest_raw = task.get("dest_dir") or ""
+        wav_flac_skipped = int(task.get("wav_flac_skipped") or 0)
+        oversized_skipped = int(task.get("oversized_skipped") or 0)
+
+        try:
+            dest_root = fs_browser.resolve_safe_dir(dest_raw, self.inbox_dir, must_exist=True)
+        except Exception as exc:
+            self.finish_task(
+                task,
+                "FAILED",
+                error=str(exc),
+                outcome="FAILED",
+                title="Sinkronisasi Gagal",
+                summary=str(exc),
+            )
+            return
+
+        if pull_fn is None:
+            err_msg = "Koneksi peer sinkronisasi tidak lagi tersedia."
+            self.finish_task(
+                task,
+                "FAILED",
+                error=err_msg,
+                outcome="FAILED",
+                title="Sinkronisasi Gagal",
+                summary=err_msg,
+            )
+            return
+
+        if wav_flac_skipped > 0:
+            self.append_log(
+                task,
+                f"[PERINGATAN] {wav_flac_skipped} file .wav/.flac dilewati (WAV/FLAC belum didukung pada fase ini).",
+            )
+        if oversized_skipped > 0:
+            self.append_log(
+                task,
+                f"[PERINGATAN] {oversized_skipped} file melebihi batas 150 MiB/file dan dilewati.",
+            )
+
+        folder_hashes: dict[str, dict[str, Path]] = {}
+        synced_count = 0
+        duplicate_count = 0
+        renamed_count = 0
+        error_count = 0
+        saved_paths: list[Path] = []
+        total = len(items)
+
+        for idx, item in enumerate(items, start=1):
+            rel_folder = str(item.get("rel_folder") or "").strip()
+            name = str(item.get("name") or "").strip()
+            ext = str(item.get("ext") or "").lower()
+            expected_sha = str(item.get("sha256") or "").strip().lower() or None
+            file_id = str(item.get("file_id") or "").strip()
+            part_path: Path | None = None
+
+            try:
+                target_dir = transfer.resolve_transfer_destination(
+                    str(dest_root),
+                    rel_folder,
+                    default_inbox=self.inbox_dir,
+                    create=True,
+                )
+                key_dir = str(target_dir)
+                if key_dir not in folder_hashes:
+                    folder_hashes[key_dir] = transfer.build_folder_sha256_index(target_dir)
+                sha_map = folder_hashes[key_dir]
+
+                if expected_sha and expected_sha in sha_map:
+                    duplicate_count += 1
+                    self.append_log(task, f"[SKIP DUPLIKAT] {name} (SHA-256 sudah ada di '{target_dir.name}')")
+                    continue
+
+                part_path = transfer.create_staged_part_file(target_dir)
+                pull_fn(file_id, part_path, expected_sha256=expected_sha)
+                transfer.verify_staged_audio_file(part_path, ext)
+                committed = transfer.commit_staged_audio(
+                    part_path,
+                    target_dir,
+                    name,
+                    expected_sha256=expected_sha,
+                    existing_hashes=sha_map,
+                    root_for_rel=dest_root,
+                )
+                part_path = None
+                if committed["status"] == "skipped_duplicate":
+                    duplicate_count += 1
+                    self.append_log(task, f"[SKIP DUPLIKAT] {name} (SHA-256 identik)")
+                else:
+                    synced_count += 1
+                    saved_paths.append(target_dir / committed["filename"])
+                    if committed.get("renamed"):
+                        renamed_count += 1
+                        self.append_log(task, f"[SYNC RENAME] {name} -> {committed['rel_path']}")
+                    else:
+                        self.append_log(task, f"[SYNC OK] {committed['rel_path']}")
+            except Exception as exc:
+                error_count += 1
+                self.append_log(task, f"[SYNC ERROR] {name}: {exc}")
+            finally:
+                if part_path is not None:
+                    part_path.unlink(missing_ok=True)
+                task["progress"] = round((idx / max(total, 1)) * 100)
+
+        self.metadata_cache.invalidate_dir_cache(dest_root)
+        if saved_paths:
+            self.metadata_cache.probe_files_fast(saved_paths, include_spectral=False)
+        stats = {
+            "synced": synced_count,
+            "skipped": duplicate_count,
+            "renamed": renamed_count,
+            "wav_flac_skipped": wav_flac_skipped,
+            "oversized_skipped": oversized_skipped,
+            "errors": error_count,
+        }
+        warn_parts = []
+        if duplicate_count > 0:
+            warn_parts.append(f"{duplicate_count} duplikat dilewati")
+        if renamed_count > 0:
+            warn_parts.append(f"{renamed_count} nama bentrok di-rename otomatis")
+        if wav_flac_skipped > 0:
+            warn_parts.append(f"⚠️ {wav_flac_skipped} WAV/FLAC dilewati")
+        suffix = f" ({', '.join(warn_parts)})" if warn_parts else ""
+
+        if error_count == 0 and (synced_count > 0 or duplicate_count > 0):
+            outcome = "WARNING" if wav_flac_skipped > 0 else "SUCCESS"
+            self.finish_task(
+                task,
+                "SUCCESS",
+                progress=100,
+                outcome=outcome,
+                title="Sinkronisasi Folder Selesai",
+                summary=f"{synced_count} lagu berhasil disinkronkan{suffix}.",
+                stats=stats,
+            )
+        elif synced_count > 0 and error_count > 0:
+            self.finish_task(
+                task,
+                "SUCCESS",
+                progress=100,
+                outcome="WARNING",
+                title="Sinkronisasi Selesai Sebagian",
+                summary=f"{synced_count} lagu masuk, {error_count} gagal{suffix}.",
+                stats=stats,
+            )
+        else:
+            self.finish_task(
+                task,
+                "FAILED",
+                progress=100,
+                error=f"{error_count} file gagal disinkronkan.",
+                outcome="FAILED",
+                title="Sinkronisasi Gagal",
+                summary=f"Tidak ada lagu yang tersimpan ({error_count} error){suffix}.",
+                stats=stats,
+            )
+
     def run_worker_loop(self) -> None:
         """Background worker processing tasks from self.queue sequentially."""
         while True:
@@ -1275,6 +1634,8 @@ class TaskQueueManager:
                 self.execute_resample_task(task)
             elif task.get("type") == "split":
                 self.execute_split_task(task)
+            elif task.get("type") == "sync":
+                self.execute_sync_task(task)
             else:
                 self.execute_download_task(task)
 

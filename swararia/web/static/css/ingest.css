@@ -117,6 +117,12 @@
   background: rgba(0, 245, 155, 0.1);
 }
 
+.ing-kind.yt-premium-max {
+  color: #fcd34d;
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(245, 158, 11, 0.16);
+}
+
 .ing-kind.video {
   color: var(--accent-amber);
   border-color: rgba(255, 190, 11, 0.35);
@@ -576,10 +582,18 @@
 }
 
 .ing-result-spec.premium {
-  color: #34d399;
-  background: rgba(16, 185, 129, 0.14);
-  border-color: rgba(16, 185, 129, 0.45);
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(251, 191, 36, 0.5);
   font-weight: 700;
+}
+
+.ing-qitem-badges {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.22rem;
 }
 
 .ing-cookie-tools {

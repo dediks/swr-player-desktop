@@ -14,6 +14,7 @@ import {
   createGroupCollapseController,
   createSpectralBadge,
   createQualityTierBadge,
+  isYoutubePremiumMax,
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
@@ -303,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (qcFilter === 'CLIPPING' && !diag.isClipping) return false;
         if (qcFilter === 'TRIM' && !diag.isTrim) return false;
         if (qcFilter === 'SAFE' && !diag.isSafe) return false;
+        if (qcFilter === 'YT_PREMIUM' && !isYoutubePremiumMax(f.ext, f.qc)) return false;
         if (qcFilter === 'FAKE_HQ' && !diag.isFakeHq) return false;
       }
 

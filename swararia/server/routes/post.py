@@ -23,9 +23,13 @@ class PostRoutesMixin:
             if not hub.remote_hub.enabled:
                 self.send_json(403, {"error": "FOH Mobile Remote sedang dinonaktifkan di Master Deck."})
                 return
-            if path != "/api/remote/command":
+            if path not in ("/api/remote/command", "/api/remote/upload"):
                 self.send_json(403, {"error": "Operasi ini hanya diizinkan langsung dari Master Laptop/PC."})
                 return
+
+        if path == "/api/remote/upload":
+            self._handle_post_remote_upload()
+            return
 
         self.close_connection = True
         if path.startswith('/api/native-remote') and not self.local_request_allowed(write=True):
@@ -145,6 +149,7 @@ class PostRoutesMixin:
                 "blocked_remotes": blocked_list,
                 "pin": current_pin,
                 "enabled": is_enabled,
+                "upload_library_version": hub.remote_hub.get_library_revision(),
                 "port": int(self.server.server_address[1]),
             }
             if native_master:
@@ -174,6 +179,18 @@ class PostRoutesMixin:
                 "active_remotes": active_list,
                 "blocked_remotes": blocked_list,
             })
+        elif path == "/api/remote/upload-config":
+            self._handle_post_upload_config(payload)
+        elif path == "/api/sync/pair":
+            self._handle_post_sync_pair(payload)
+        elif path == "/api/sync/refresh":
+            self._handle_post_sync_refresh(payload)
+        elif path == "/api/sync/disconnect":
+            self._handle_post_sync_disconnect(payload)
+        elif path == "/api/sync/preview":
+            self._handle_post_sync_preview(payload)
+        elif path == "/api/sync/start":
+            self._handle_post_sync_start(payload)
         elif path == "/api/remote/command":
             if not hub.remote_hub.enabled:
                 self.send_json(403, {"ok": False, "error": "FOH Mobile Remote sedang dinonaktifkan.", "code": "DISABLED"})

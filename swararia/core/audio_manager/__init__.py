@@ -14,6 +14,7 @@ from swararia.core.audio_manager.constants import (  # noqa: F401
     TAG_FOLDER_PATTERN,
     YOUTUBE_AUDIO_SELECTOR,
     YOUTUBE_OPUS_SELECTOR,
+    YOUTUBE_STREAM_TIERS_META,
     STREAM_TIERS,
     YOUTUBE_PREMIUM_EXTRACTOR_ARGS,
     YOUTUBE_FALLBACK_EXTRACTOR_ARGS,
@@ -39,6 +40,7 @@ from swararia.core.audio_manager.ytdlp_engine import (  # noqa: F401
     can_auto_update_ytdlp,
     try_claim_ytdlp_auto_heal_slot,
     update_ytdlp_preferring_nightly,
+    classify_format_tier,
     describe_format_tier,
     sync_download_archive,
     run_ytdlp_process,
@@ -49,6 +51,7 @@ from swararia.core.audio_manager.ytdlp_engine import (  # noqa: F401
 from swararia.core.audio_manager.audio_analysis import (  # noqa: F401
     get_float,
     sha256_file,
+    classify_audio_quality_tier,
     metadata,
     loudness,
     analyze_spectral_quality,

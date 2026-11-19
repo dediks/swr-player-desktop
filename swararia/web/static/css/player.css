@@ -3323,3 +3323,232 @@ body[data-page="player"] .dock-mini-pill {
     display: none;
   }
 }
+
+/* Phone Upload & PC <-> PC Sync Shared Transfer Controls */
+.native-media-box {
+  padding: 0.65rem 0.8rem;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.native-media-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.62rem;
+  cursor: pointer;
+}
+
+.native-media-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.native-media-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.native-media-toggle small {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.native-feedback {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-recessed);
+  color: var(--accent-cyan);
+  font-size: 0.76rem;
+  border: 1px solid var(--border-subtle);
+}
+
+.native-feedback:empty {
+  display: none;
+}
+
+.transfer-warning-strip {
+  padding: 0.62rem 0.8rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.transfer-warning-strip strong {
+  color: var(--accent-amber);
+}
+
+.transfer-btn-pair {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.transfer-file-list,
+.sync-folders-list,
+.sync-diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.transfer-file-row,
+.diff-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-recessed);
+  font-size: 0.76rem;
+}
+
+.transfer-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-file-status,
+.diff-action-tag {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.14rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.transfer-file-row.is-ok .transfer-file-status,
+.diff-action-tag.diff-new {
+  color: var(--accent-green);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.transfer-file-row.is-warn .transfer-file-status,
+.diff-action-tag.diff-skip_duplicate,
+.diff-action-tag.diff-rename_collision {
+  color: var(--accent-amber);
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.transfer-file-row.is-error .transfer-file-status {
+  color: var(--accent-red);
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.transfer-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.transfer-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.transfer-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+  transition: width 0.15s ease;
+}
+
+.transfer-progress-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  min-width: 38px;
+  text-align: right;
+}
+
+.sync-modal-card {
+  max-width: 660px;
+}
+
+.sync-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sync-fingerprint-code {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.sync-folders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sync-folder-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-recessed);
+  cursor: pointer;
+}
+
+.sync-folder-item input[type="checkbox"] {
+  margin-top: 0.2rem;
+  accent-color: var(--accent-cyan);
+}
+
+.sync-folder-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.sync-folder-meta small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.sync-diff-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.sync-diff-summary {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}

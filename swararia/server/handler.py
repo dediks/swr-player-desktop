@@ -11,6 +11,8 @@ from swararia.server.routes.post import PostRoutesMixin
 from swararia.server.routes.post_ingest import IngestPostMixin
 from swararia.server.routes.post_library import LibraryPostMixin
 from swararia.server.routes.post_splitter import SplitterPostMixin
+from swararia.server.routes.post_sync import SyncRoutesMixin
+from swararia.server.routes.post_upload import UploadPostMixin
 from swararia.server.routes.streaming import StreamingMixin
 
 
@@ -21,6 +23,8 @@ class AudioServerHandler(
     IngestPostMixin,
     LibraryPostMixin,
     SplitterPostMixin,
+    UploadPostMixin,
+    SyncRoutesMixin,
     StreamingMixin,
     BaseHTTPRequestHandler,
 ):

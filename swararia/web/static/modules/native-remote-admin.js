@@ -4,6 +4,7 @@ import { createSvgIcon } from './dom-icons.js';
 export function initNativeRemoteAdmin({
   document,
   renderQr,
+  getActiveSourceDir = null,
   request = async payload => {
     const response = await fetch('/api/native-remote', payload ? {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -121,6 +122,22 @@ export function initNativeRemoteAdmin({
     if (el('nativeMediaTransfer')) {
       el('nativeMediaTransfer').checked = Boolean(info.media_transfer_enabled);
       el('nativeMediaTransfer').disabled = busy || !info.enabled;
+    }
+    if (el('nativeSyncBox')) show('nativeSyncBox', Boolean(info.enabled));
+    if (el('nativeFolderSync')) {
+      el('nativeFolderSync').checked = Boolean(info.sync_enabled);
+      el('nativeFolderSync').disabled = busy || !info.enabled;
+    }
+    if (el('nativeSyncSourceLabel')) {
+      el('nativeSyncSourceLabel').textContent = info.sync_source_label || 'library/inbox';
+    }
+    if (el('nativeUploadBox')) show('nativeUploadBox', Boolean(info.enabled));
+    if (el('nativeAndroidUpload')) {
+      el('nativeAndroidUpload').checked = Boolean(info.upload_enabled);
+      el('nativeAndroidUpload').disabled = busy || !info.enabled;
+    }
+    if (el('nativeUploadDestLabel')) {
+      el('nativeUploadDestLabel').textContent = info.upload_dest_label || 'library/inbox';
     }
     show('nativeDeviceSection', Boolean(info.enabled && info.devices?.length));
     show('nativeInviteOpen', Boolean(info.enabled));
@@ -263,8 +280,14 @@ export function initNativeRemoteAdmin({
       ['nativeInviteOpen', !current?.enabled], ['nativeInviteClose', !validInvite(current)],
       ['nativeCopy', !validInvite(current) || !el('nativePairing').value], ['nativeRefresh', false],
     ]) el(id).disabled = busy || Boolean(disabled);
-    for (const id of ['nativeBridgeEnable', 'nativeBridgeDisable', 'nativeBridgeCheck', 'nativeBridgeBannerEnable', 'nativeMediaTransfer']) {
-      if (el(id)) el(id).disabled = busy || (id === 'nativeMediaTransfer' && !current?.enabled);
+    for (const id of [
+      'nativeBridgeEnable', 'nativeBridgeDisable', 'nativeBridgeCheck', 'nativeBridgeBannerEnable',
+      'nativeMediaTransfer', 'nativeFolderSync', 'btnNativeSyncUseSource', 'btnNativeSyncResetInbox',
+      'nativeAndroidUpload', 'btnNativeUploadUseSource', 'btnNativeUploadResetInbox',
+    ]) {
+      const featureGate = id.startsWith('native') || id.startsWith('btnNativeSync') || id.startsWith('btnNativeUpload');
+      const needsEnabled = id === 'nativeMediaTransfer' || id === 'nativeFolderSync' || id === 'nativeAndroidUpload' || id.startsWith('btnNativeSync') || id.startsWith('btnNativeUpload');
+      if (el(id) && featureGate) el(id).disabled = busy || (needsEnabled && !current?.enabled);
     }
     for (const { row } of rows.values()) for (const child of row.children) {
       if (child.tagName?.toLowerCase() === 'button' || child.tagName?.toLowerCase() === 'select') child.disabled = busy;
@@ -377,6 +400,55 @@ export function initNativeRemoteAdmin({
       return act({ action: 'set_media_transfer', enabled });
     });
   }
+  if (el('nativeFolderSync')) {
+    el('nativeFolderSync').addEventListener('change', () => {
+      const enabled = Boolean(el('nativeFolderSync').checked);
+      el('nativeFolderSync').checked = Boolean(current?.sync_enabled);
+      return act({ action: 'set_sync_enabled', enabled });
+    });
+  }
+  const bindFeaturePathControls = ({ useId, resetId, action, dirKey, enabledKey, missingMsg }) => {
+    if (el(useId)) {
+      el(useId).addEventListener('click', () => {
+        const activeDir = typeof getActiveSourceDir === 'function' ? String(getActiveSourceDir() || '').trim() : '';
+        if (!activeDir) {
+          if (el('nativeFeedback')) el('nativeFeedback').textContent = missingMsg;
+          return;
+        }
+        const enabled = Boolean(current?.[enabledKey]);
+        return act({ action, enabled, [dirKey]: activeDir });
+      });
+    }
+    if (el(resetId)) {
+      el(resetId).addEventListener('click', () => {
+        const enabled = Boolean(current?.[enabledKey]);
+        return act({ action, enabled, [dirKey]: '' });
+      });
+    }
+  };
+  bindFeaturePathControls({
+    useId: 'btnNativeSyncUseSource',
+    resetId: 'btnNativeSyncResetInbox',
+    action: 'set_sync_enabled',
+    dirKey: 'source_dir',
+    enabledKey: 'sync_enabled',
+    missingMsg: 'Buka folder sumber di Player terlebih dahulu sebelum menjadikannya sumber sync.',
+  });
+  if (el('nativeAndroidUpload')) {
+    el('nativeAndroidUpload').addEventListener('change', () => {
+      const enabled = Boolean(el('nativeAndroidUpload').checked);
+      el('nativeAndroidUpload').checked = Boolean(current?.upload_enabled);
+      return act({ action: 'set_upload_enabled', enabled });
+    });
+  }
+  bindFeaturePathControls({
+    useId: 'btnNativeUploadUseSource',
+    resetId: 'btnNativeUploadResetInbox',
+    action: 'set_upload_enabled',
+    dirKey: 'dest_dir',
+    enabledKey: 'upload_enabled',
+    missingMsg: 'Buka folder sumber di Player terlebih dahulu sebelum menjadikannya tujuan upload.',
+  });
   el('nativeRefresh').addEventListener('click', () => refresh({ checkBridge: true }));
   if (el('nativeBridgeEnable')) el('nativeBridgeEnable').addEventListener('click', () => runBridgeAction('enable'));
   if (el('nativeBridgeBannerEnable')) el('nativeBridgeBannerEnable').addEventListener('click', () => runBridgeAction('enable'));

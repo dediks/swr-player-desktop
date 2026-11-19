@@ -613,6 +613,193 @@ def test_download_triggers_auto_heal_and_fallback_clients_on_recoverable_failure
     assert "android_vr" in recorded_cmds[1][recorded_cmds[1].index("--extractor-args") + 1]
 
 
+def test_classify_format_tier_and_audio_quality_tier():
+    t774 = am.classify_format_tier("774")
+    assert t774["tier"] == "yt_premium_max"
+    assert t774["bitrate_kbps"] == 256
+    assert t774["is_premium"] is True
+    assert t774["is_highest_quality"] is True
+
+    t141 = am.classify_format_tier("141")
+    assert t141["tier"] == "yt_premium_max"
+    assert t141["bitrate_kbps"] == 256
+    assert t141["is_premium"] is True
+    assert t141["is_highest_quality"] is True
+
+    t_combo = am.classify_format_tier("137+141")
+    assert t_combo["is_premium"] is True
+    assert t_combo["is_highest_quality"] is True
+
+    t251 = am.classify_format_tier("251")
+    assert t251["bitrate_kbps"] == 160
+    assert t251["is_premium"] is False
+    assert t251["is_highest_quality"] is False
+
+    tdrc = am.classify_format_tier("774-drc")
+    assert tdrc["is_drc"] is True
+    assert tdrc["is_premium"] is False
+    assert tdrc["is_highest_quality"] is False
+
+    assert "HIGHEST QUALITY" in am.describe_format_tier("774")
+    assert "HIGHEST QUALITY" in am.describe_format_tier("141")
+
+    # Local audio quality classification
+    q_opus_prem = am.classify_audio_quality_tier(codec="opus", bitrate_kbps=248.5, ext=".opus")
+    assert q_opus_prem["quality_tier"] == "yt_premium_max"
+    assert q_opus_prem["is_youtube_premium"] is True
+    assert q_opus_prem["is_highest_quality"] is True
+
+    q_aac_prem = am.classify_audio_quality_tier(codec="aac", bitrate_kbps=256.0, ext=".m4a")
+    assert q_aac_prem["quality_tier"] == "yt_premium_max"
+    assert q_aac_prem["is_youtube_premium"] is True
+    assert q_aac_prem["is_highest_quality"] is True
+
+    # Quiet Opus 774 track verified by recorded source_format_id
+    q_verified = am.classify_audio_quality_tier(
+        codec="opus", bitrate_kbps=188.0, ext=".opus", source_format_id="774"
+    )
+    assert q_verified["quality_tier"] == "yt_premium_max"
+    assert q_verified["is_youtube_premium"] is True
+    assert q_verified["is_highest_quality"] is True
+    assert q_verified["quality_verified_source"] is True
+
+    # Public 160k Opus is NOT flagged as YouTube Premium highest quality
+    q_pub = am.classify_audio_quality_tier(codec="opus", bitrate_kbps=160.0, ext=".opus")
+    assert q_pub["quality_tier"] == "standard"
+    assert q_pub["is_youtube_premium"] is False
+    assert q_pub["is_highest_quality"] is False
+
+    # Transcoded MP3 320k is HQ, not YT Premium raw stream
+    q_mp3 = am.classify_audio_quality_tier(
+        codec="mp3", bitrate_kbps=320.0, ext=".mp3", source_format_id="774"
+    )
+    assert q_mp3["quality_tier"] == "hq"
+    assert q_mp3["is_youtube_premium"] is False
+    assert q_mp3["is_highest_quality"] is False
+
+    # Upsampled Fake HQ never earns Premium or HQ status
+    q_fake = am.classify_audio_quality_tier(
+        codec="aac", bitrate_kbps=256.0, ext=".m4a", spectral_status="FAKE_HQ", source_format_id="141"
+    )
+    assert q_fake["quality_tier"] == "fake_hq"
+    assert q_fake["is_youtube_premium"] is False
+    assert q_fake["is_highest_quality"] is False
+
+    q_flac = am.classify_audio_quality_tier(codec="flac", bitrate_kbps=980.0, ext=".flac")
+    assert q_flac["quality_tier"] == "lossless"
+    assert q_flac["is_highest_quality"] is True
+
+
+def test_run_ytdlp_process_parses_stream_tier_and_task_engine_exposes_bitrate(tmp_path):
+    import io
+    from swararia.core import task_engine as te
+    from swararia.core.audio_manager import audio_analysis as am_analysis
+
+    fake_stdout = io.StringIO(
+        "[youtube] qmOLtTGvsbM: Downloading webpage\n"
+        "[info] qmOLtTGvsbM: Downloading 1 format(s): 774\n"
+        "[download] 100.0% of   4.50MiB in 00:00:01 at 4.50MiB/s\n"
+    )
+
+    class _FakeProc:
+        stdout = fake_stdout
+
+        def wait(self):
+            return 0
+
+    logs = []
+    with mock.patch.object(subprocess, "Popen", return_value=_FakeProc()):
+        res = am.run_ytdlp_process(["yt-dlp", "url"], on_log=logs.append)
+    assert res["returncode"] == 0
+    assert res["selected_format_id"] == "774"
+    assert res["is_youtube_premium"] is True
+    assert res["is_highest_quality"] is True
+    assert res["expected_bitrate_kbps"] == 256
+    assert res["video_formats"]["qmOLtTGvsbM"]["format_id"] == "774"
+    assert any("HIGHEST QUALITY" in line for line in logs)
+
+    # TaskQueueManager download -> metadata cache -> get_library_files
+    inbox = tmp_path / "library" / "inbox"
+    archive = tmp_path / "library" / "downloaded_ids.txt"
+    cookies = tmp_path / "library" / "cookies.txt"
+    cookies.parent.mkdir(parents=True, exist_ok=True)
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+
+    cache = te.AudioMetadataCache()
+    mgr = te.TaskQueueManager(cache, inbox, archive, cookies)
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    def _fake_download_run(cmd, env=None, existing_by_vid=None, on_log=None, on_progress=None):
+        dl_file = inbox / "Premium Song [qmOLtTGvsbM].opus"
+        dl_file.write_bytes(b"OggS" + b"\x00" * 1024)
+        if on_log:
+            on_log("[STREAM TIER] Format 774: ★ HIGHEST QUALITY • YOUTUBE MUSIC PREMIUM — Opus ~256 kbps (48 kHz, .webm)")
+        return {
+            "returncode": 0,
+            "skipped_files": [],
+            "last_error_line": "",
+            "cookie_err_detected": False,
+            "engine_recovery_needed": False,
+            "selected_format_id": "774",
+            "stream_tier": am.classify_format_tier("774"),
+            "video_formats": {"qmOLtTGvsbM": am.classify_format_tier("774")},
+            "is_youtube_premium": True,
+            "is_highest_quality": True,
+            "expected_bitrate_kbps": 256,
+        }
+
+    fake_meta = {
+        "codec": "opus",
+        "sample_rate_hz": "48000",
+        "channels": 2,
+        "duration_s": 180.0,
+        "bitrate_kbps": 254.0,
+    }
+    task = {
+        "id": "job_test_prem",
+        "type": "download",
+        "url": "https://music.youtube.com/watch?v=qmOLtTGvsbM",
+        "status": "PROCESSING",
+        "auto_scan": False,
+        "is_playlist": False,
+        "audio_format": "opus",
+        "keep_opus": False,
+        "use_cookies": True,
+        "cookie_browser": "chrome",
+        "progress": 0,
+    }
+
+    with mock.patch.object(am, "is_ytdlp_available", return_value=True), \
+            mock.patch.object(am, "sync_download_archive", return_value=0), \
+            mock.patch.object(am, "check_youtube_cookies_tier", return_value={
+                "present": True, "status": "premium", "tier": "premium",
+                "label": "YT Music Premium", "note": "Sesi aktif 256 kbps",
+            }), \
+            mock.patch.object(am, "run_ytdlp_process", side_effect=_fake_download_run), \
+            mock.patch.object(am, "metadata", return_value=dict(fake_meta)), \
+            mock.patch.object(am_analysis, "metadata", return_value=dict(fake_meta)), \
+            mock.patch.object(shutil, "which", return_value="/usr/bin/ffprobe"):
+        mgr.execute_download_task(task)
+
+    assert task["status"] == "SUCCESS"
+    assert task["stream_info"]["bitrate_kbps"] == 254
+    assert task["stream_info"]["is_youtube_premium"] is True
+    assert task["stream_info"]["is_highest_quality"] is True
+    assert "254 kbps" in task["summary"]
+    assert "YT Premium Highest Quality" in task["summary"]
+    assert any("HIGHEST QUALITY (YT PREMIUM)" in ln for ln in task.get("logs", []))
+
+    files, _ = cache.get_library_files(inbox, force_refresh=True)
+    assert len(files) == 1
+    qc = files[0]["qc"]
+    assert qc["bitrate_kbps"] == 254.0
+    assert qc["quality_tier"] == "yt_premium_max"
+    assert qc["is_youtube_premium"] is True
+    assert qc["is_highest_quality"] is True
+    assert qc["quality_verified_source"] is True
+    assert qc["source_format_id"] == "774"
+
+
 
 
 

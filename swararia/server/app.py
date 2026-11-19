@@ -3,12 +3,51 @@ from __future__ import annotations
 
 import sys
 import threading
+from pathlib import Path
 from http.server import ThreadingHTTPServer
 
-from swararia.core import fs_browser
-from swararia.remote.secure_remote import SecureRemote
+from swararia.core import fs_browser, transfer
+from swararia.remote.peer_sync_client import PeerSyncManager
+from swararia.remote.secure_remote import RemoteError, SecureRemote
 from swararia.server import hub, network, state
 from swararia.server.handler import AudioServerHandler
+
+
+def _native_upload_handler(
+    rfile,
+    content_length: int,
+    dest_root: str,
+    filename: str,
+    sha256_hex: str,
+    playlist_name: str | None,
+) -> tuple[int, dict]:
+    """Bridges Native TLS octet-stream uploads to core.transfer validation and cache updates."""
+    try:
+        committed = transfer.stage_and_commit_stream(
+            rfile,
+            content_length,
+            dest_root,
+            filename,
+            sha256_hex,
+            subfolder=playlist_name,
+            default_inbox=state.INBOX_DIR,
+        )
+    except transfer.TransferValidationError as exc:
+        raise RemoteError(exc.code, exc.status) from None
+
+    saved_path = committed.pop("_saved_path", "")
+    if saved_path:
+        state.metadata_cache.invalidate_dir_cache(Path(dest_root))
+        hub.remote_hub.bump_library_revision()
+        threading.Thread(
+            target=state.probe_files_fast,
+            args=([Path(saved_path)],),
+            kwargs={"include_spectral": False},
+            daemon=True,
+        ).start()
+
+    status_code = 200 if committed.get("deduplicated") else 201
+    return status_code, committed
 
 
 class LocalAudioServer(ThreadingHTTPServer):
@@ -20,7 +59,10 @@ class LocalAudioServer(ThreadingHTTPServer):
             hub.remote_hub,
             media_resolver=fs_browser.resolve_safe_audio_file,
             default_inbox=state.INBOX_DIR,
+            sync_scanner=transfer.scan_sync_folders,
+            upload_handler=_native_upload_handler,
         )
+        self.peer_sync = PeerSyncManager()
         self._wsl_foh_bridge_server = None
         self._wsl_foh_bridge_thread = None
         self.wsl_foh_internal_port: int | None = None
@@ -89,6 +131,7 @@ class LocalAudioServer(ThreadingHTTPServer):
     def server_close(self):
         self._stop_wsl_foh_bridge()
         self.secure_remote.stop()
+        self.peer_sync.disconnect()
         super().server_close()
 
 

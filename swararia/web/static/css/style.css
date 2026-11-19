@@ -2830,6 +2830,24 @@ body.has-active-dock .toast-container {
   border: 1px solid rgba(16, 185, 129, 0.45);
 }
 
+.quality-tier-badge.yt-premium-max {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+}
+
+.quality-tier-badge.standard {
+  background: rgba(56, 189, 248, 0.1);
+  color: #93c5fd;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.quality-tier-badge.low {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+}
+
 .quality-tier-badge.lossless {
   background: rgba(56, 189, 248, 0.16);
   color: #7dd3fc;

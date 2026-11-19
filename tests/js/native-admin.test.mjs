@@ -294,6 +294,80 @@ test('media transfer toggle defaults off, syncs when enabled, and rolls back on 
   await h.el('nativeMediaTransfer').listeners.change();
   assert.equal(h.el('nativeMediaTransfer').checked, true);
 });
+test('pc folder sync toggle defaults off, syncs when enabled, and rolls back on failure', async () => {
+  const h = harness();
+  await h.admin.refresh();
+  assert.ok(!visible(h.el('nativeSyncBox')));
+  assert.equal(h.el('nativeFolderSync').disabled, true);
+  h.state = { enabled: true, media_transfer_enabled: false, sync_enabled: false, url: 'https://127.0.0.1:8766', devices: [] };
+  h.responder = async p => {
+    if (p?.action === 'set_sync_enabled') {
+      h.state.sync_enabled = p.enabled;
+    }
+    return structuredClone(h.state);
+  };
+  await h.admin.refresh();
+  assert.ok(visible(h.el('nativeSyncBox')));
+  assert.equal(h.el('nativeFolderSync').disabled, false);
+  assert.equal(h.el('nativeFolderSync').checked, false);
+  h.el('nativeFolderSync').checked = true;
+  await h.el('nativeFolderSync').listeners.change();
+  assert.equal(h.sent.at(-1).action, 'set_sync_enabled');
+  assert.equal(h.sent.at(-1).enabled, true);
+  assert.equal(h.el('nativeFolderSync').checked, true);
+
+  h.responder = async () => { throw new Error('local_origin_required'); };
+  h.el('nativeFolderSync').checked = false;
+  await h.el('nativeFolderSync').listeners.change();
+  assert.equal(h.el('nativeFolderSync').checked, true);
+});
+test('host sync source folder and android native upload controls dispatch expected actions', async () => {
+  const nodes = new Map([...html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)].map(m => [m[1], new Element(m[0])]));
+  const doc = { getElementById: id => nodes.get(id), createElement: tag => Object.assign(new Element(), { tagName: tag }), createElementNS: () => new Element() };
+  for (const node of nodes.values()) node.owner = doc;
+  globalThis.document = doc;
+  const el = id => nodes.get(id);
+  const sent = [];
+  let state = { enabled: true, sync_enabled: false, sync_source_label: 'library/inbox', upload_enabled: false, upload_dest_label: 'library/inbox', url: 'https://127.0.0.1:8766', devices: [] };
+  let activeDir = '/music/StageShow';
+  const admin = initNativeRemoteAdmin({
+    document: doc,
+    renderQr: () => true,
+    getActiveSourceDir: () => activeDir,
+    request: async p => {
+      if (p) sent.push(p);
+      if (p?.action === 'set_sync_enabled') {
+        state = { ...state, sync_enabled: p.enabled, sync_source_label: p.source_dir === '' ? 'library/inbox' : (p.source_dir ? 'StageShow' : state.sync_source_label) };
+      }
+      if (p?.action === 'set_upload_enabled') {
+        state = { ...state, upload_enabled: p.enabled, upload_dest_label: p.dest_dir === '' ? 'library/inbox' : (p.dest_dir ? 'StageShow' : state.upload_dest_label) };
+      }
+      return structuredClone(state);
+    },
+  });
+  await admin.refresh();
+  assert.equal(el('nativeSyncSourceLabel').textContent, 'library/inbox');
+  assert.equal(el('nativeUploadDestLabel').textContent, 'library/inbox');
+  await click(el('btnNativeSyncUseSource'));
+  assert.equal(sent.at(-1).action, 'set_sync_enabled');
+  assert.equal(sent.at(-1).source_dir, '/music/StageShow');
+  assert.equal(el('nativeSyncSourceLabel').textContent, 'StageShow');
+
+  el('nativeAndroidUpload').checked = true;
+  await el('nativeAndroidUpload').listeners.change();
+  assert.equal(sent.at(-1).action, 'set_upload_enabled');
+  assert.equal(sent.at(-1).enabled, true);
+  assert.equal(el('nativeAndroidUpload').checked, true);
+
+  await click(el('btnNativeUploadUseSource'));
+  assert.equal(sent.at(-1).action, 'set_upload_enabled');
+  assert.equal(sent.at(-1).dest_dir, '/music/StageShow');
+  assert.equal(el('nativeUploadDestLabel').textContent, 'StageShow');
+
+  await click(el('btnNativeUploadResetInbox'));
+  assert.equal(sent.at(-1).dest_dir, '');
+  assert.equal(el('nativeUploadDestLabel').textContent, 'library/inbox');
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { await fn(); console.log('PASS',name); } catch(e) { failed++; console.error('FAIL',name,e); } }
 console.log(`Summary: ${tests.length-failed}/${tests.length} passed.`);

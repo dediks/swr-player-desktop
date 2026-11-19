@@ -73,6 +73,42 @@ def update_ytdlp_preferring_nightly(
     return False
 
 
+def classify_format_tier(format_id: str) -> dict:
+    """Classifies a yt-dlp format ID into structured bitrate and YouTube Premium quality metadata."""
+    clean_id = (format_id or "").strip()
+    is_drc = "-drc" in clean_id
+    audio_id = clean_id.split("+")[-1].strip() if "+" in clean_id else clean_id
+    base_id = audio_id[:-4] if audio_id.endswith("-drc") else audio_id
+    meta = constants.YOUTUBE_STREAM_TIERS_META.get(base_id)
+    if meta and not is_drc:
+        return dict(meta)
+    if is_drc:
+        return {
+            "format_id": clean_id,
+            "tier": "drc",
+            "label": "Dynamic Range Compressed (DRC)",
+            "short_label": "DRC",
+            "codec": (meta or {}).get("codec", ""),
+            "bitrate_kbps": (meta or {}).get("bitrate_kbps"),
+            "sample_rate_hz": (meta or {}).get("sample_rate_hz"),
+            "is_premium": False,
+            "is_highest_quality": False,
+            "is_drc": True,
+        }
+    return {
+        "format_id": clean_id,
+        "tier": "other",
+        "label": "Audio stream terpilih",
+        "short_label": clean_id or "AUDIO",
+        "codec": "",
+        "bitrate_kbps": None,
+        "sample_rate_hz": None,
+        "is_premium": False,
+        "is_highest_quality": False,
+        "is_drc": False,
+    }
+
+
 def describe_format_tier(format_id: str) -> str:
     clean_id = format_id.strip()
     if clean_id in constants.STREAM_TIERS:
@@ -168,6 +204,9 @@ def run_ytdlp_process(
     engine_signal_detected = False
     playlist_item = 1
     playlist_total = 1
+    selected_format_id = ""
+    stream_tier: dict = {}
+    video_formats: dict[str, dict] = {}
     vid_map = existing_by_vid or {}
     log_fn = on_log or (lambda msg: print(msg, flush=True))
 
@@ -225,9 +264,19 @@ def run_ytdlp_process(
                     skipped_files.append(fname)
                 log_fn(f"[SKIPPED] File sudah ada di Library: {fname}")
 
-            fmt_match = re.search(r"Downloading \d+ format\(s\):\s*([^\s,]+)", clean_line)
+            fmt_match = re.search(
+                r"(?:([A-Za-z0-9_-]{11}):\s+)?Downloading \d+ format\(s\):\s*([^\s,]+)",
+                clean_line,
+            )
             if fmt_match:
-                log_fn(describe_format_tier(fmt_match.group(1)))
+                fmt_vid = fmt_match.group(1) or ""
+                fmt_id = fmt_match.group(2).strip()
+                tier_info = classify_format_tier(fmt_id)
+                selected_format_id = fmt_id
+                stream_tier = tier_info
+                if fmt_vid:
+                    video_formats[fmt_vid] = tier_info
+                log_fn(describe_format_tier(fmt_id))
 
             if on_progress is not None:
                 item_match = re.search(r"\[download\]\s+Downloading item\s+(\d+)\s+of\s+(\d+)", clean_line)
@@ -263,6 +312,12 @@ def run_ytdlp_process(
         "last_error_line": last_error_line,
         "cookie_err_detected": cookie_err_detected,
         "engine_recovery_needed": engine_recovery_needed,
+        "selected_format_id": selected_format_id,
+        "stream_tier": stream_tier,
+        "video_formats": video_formats,
+        "is_youtube_premium": bool(stream_tier.get("is_premium")),
+        "is_highest_quality": bool(stream_tier.get("is_highest_quality")),
+        "expected_bitrate_kbps": stream_tier.get("bitrate_kbps"),
     }
 
 
@@ -381,8 +436,9 @@ def build_ytdlp_command(
         cmd.extend(["--extractor-args", constants.YOUTUBE_FALLBACK_EXTRACTOR_ARGS])
 
     opus_note = " + Simpan File Asli Opus (.webm)" if keep_opus else ""
+    tier_tag = "~256 kbps ★ YT Premium Highest Quality" if effective_premium else "~160 kbps Publik"
     if norm_format == "opus":
-        desc = f"Target: Opus Best Quality (.opus) — Lossless Remux 48 kHz (Auth: {auth_desc}, Anti-DRC: Active, Multi-thread: 4x)"
+        desc = f"Target: Opus Best Quality (.opus) — {tier_tag}, Lossless Remux 48 kHz (Auth: {auth_desc}, Anti-DRC: Active, Multi-thread: 4x)"
     elif norm_format == "mp3_320k":
         cmd.extend([
             "--extract-audio",
@@ -393,7 +449,7 @@ def build_ytdlp_command(
         ])
         if keep_opus:
             cmd.append("--keep-video")
-        desc = f"Target: MP3 320 kbps CBR{opus_note} (KONVERSI lossy, Auth: {auth_desc}, Multi-thread: 4x)"
+        desc = f"Target: MP3 320 kbps CBR{opus_note} (Sumber: {tier_tag}, KONVERSI lossy, Auth: {auth_desc}, Multi-thread: 4x)"
     elif norm_format == "mp3_vbr0":
         cmd.extend([
             "--extract-audio",
@@ -404,10 +460,11 @@ def build_ytdlp_command(
         ])
         if keep_opus:
             cmd.append("--keep-video")
-        desc = f"Target: MP3 VBR 0{opus_note} (KONVERSI lossy, Auth: {auth_desc}, Multi-thread: 4x)"
+        desc = f"Target: MP3 VBR 0 (~245 kbps){opus_note} (Sumber: {tier_tag}, KONVERSI lossy, Auth: {auth_desc}, Multi-thread: 4x)"
     else:
         # Native: no postprocessing at all (no extract/convert/remux/metadata embed).
-        desc = f"Target: Native Raw Stream - stream asli YouTube tanpa konversi (Auth: {auth_desc}, Anti-DRC: Active, Multi-thread: 4x)"
+        native_tier = "256 kbps AAC 141 / Opus 774 ★ YT Premium Highest Quality" if effective_premium else "~160 kbps Opus 251 / 128 kbps AAC 140"
+        desc = f"Target: Native Raw Stream ({native_tier}) - stream asli YouTube tanpa konversi (Auth: {auth_desc}, Anti-DRC: Active, Multi-thread: 4x)"
 
     clean_url = url
     if "list=VL" in clean_url:

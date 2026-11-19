@@ -85,6 +85,12 @@
 #androidRemoteModal .native-media-toggle input[type="checkbox"] { width:16px; height:16px; margin-top:2px; accent-color:var(--accent-cyan); flex-shrink:0; }
 #androidRemoteModal .native-media-toggle span { display:flex; flex-direction:column; gap:2px; font-size:12px; line-height:1.45; }
 #androidRemoteModal .native-media-toggle small { font-size:11px; color:var(--text-muted); }
+#androidRemoteModal .native-path-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:8px; padding-top:8px; border-top:1px solid var(--border-subtle); }
+#androidRemoteModal .native-path-label { font-size:11px; color:var(--text-muted); }
+#androidRemoteModal .native-path-label code { font-family:var(--font-mono); font-size:10.5px; color:var(--accent-cyan); }
+#androidRemoteModal .native-path-actions { display:flex; gap:6px; flex-wrap:wrap; }
+#androidRemoteModal .btn-chip { padding:3px 9px; min-height:26px; font-size:11px; border-radius:var(--radius-full); border:1px solid var(--border-subtle); background:var(--bg-surface-elevated); color:var(--text-secondary); cursor:pointer; }
+#androidRemoteModal .btn-chip:hover:not(:disabled) { border-color:var(--accent-cyan); color:var(--text-primary); }
 #androidRemoteModal .native-add { min-height:36px; justify-content:center; }
 #androidRemoteModal .native-invite-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
 #androidRemoteModal .native-invite-actions .native-add { flex:1; }

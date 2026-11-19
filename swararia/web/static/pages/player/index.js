@@ -14,6 +14,8 @@ import {
   createFileNameCell,
   createGroupCollapseController,
   createSpectralBadge,
+  createQualityTierBadge,
+  isYoutubePremiumMax,
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
@@ -22,6 +24,7 @@ import { initFolderModal } from '../../modules/folder-modal.js';
 import { renderQrToCanvas } from '../../modules/qr-code.js';
 import { createNativeCommandConsumer } from '../../modules/native-remote-player.js';
 import { initNativeRemoteAdmin } from '../../modules/native-remote-admin.js';
+import { initPhoneUploadController } from '../../modules/phone-upload.js';
 
 const CUE_PADS_STORAGE_KEY = 'swararia_foh_cue_pads_v1';
 const PLAYER_PREFS_STORAGE_KEY = 'swararia_foh_player_prefs_v1';
@@ -243,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let fadeRampStartedAtMs = 0;
   let fadePendingAction = null;
   let isAuditRunning = false;
+  let lastAutoProbedSignature = '';
   let isPageUnloading = false;
   let hasRestoredInitialSession = false;
   let pendingAutoResumeOnGesture = false;
@@ -1430,11 +1434,24 @@ document.addEventListener('DOMContentLoaded', () => {
     nowPlayingMetaRow.appendChild(extChip);
 
     const qc = fileObj.qc || {};
+    const brNum = qc.bitrate_kbps ? Math.round(parseFloat(qc.bitrate_kbps)) : 0;
+    if (brNum > 0) {
+      const brChip = document.createElement('span');
+      brChip.className = 'meta-chip accent';
+      brChip.textContent = `${brNum} kbps`;
+      nowPlayingMetaRow.appendChild(brChip);
+    }
+
     if (qc.sample_rate_hz) {
       const srChip = document.createElement('span');
       srChip.className = 'meta-chip';
       srChip.textContent = `${(Number(qc.sample_rate_hz) / 1000).toFixed(1)} kHz`;
       nowPlayingMetaRow.appendChild(srChip);
+    }
+
+    const tierBadge = createQualityTierBadge(fileObj.ext, qc);
+    if (tierBadge) {
+      nowPlayingMetaRow.appendChild(tierBadge);
     }
 
     const specBadge = createSpectralBadge(qc);
@@ -2262,6 +2279,30 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
 
+    const needsBitrateProbe = allFiles.some(f => !f.qc || !f.qc.codec || !f.qc.bitrate_kbps);
+    const probeSig = `${currentSourceDir}|${allFiles.length}`;
+    if (needsBitrateProbe && probeSig !== lastAutoProbedSignature) {
+      lastAutoProbedSignature = probeSig;
+      const probeDir = currentSourceDir;
+      apiPost('/api/probe', { source_dir: probeDir, probe_spectral: false }).then((probeRes) => {
+        if (!probeRes.ok || !Array.isArray(probeRes.data?.files)) return;
+        if (probeDir !== currentSourceDir) return;
+        allFiles = probeRes.data.files;
+        if (Array.isArray(probeRes.data.playlists)) {
+          allPlaylists = probeRes.data.playlists;
+        }
+        renderPlaylists();
+        applyFiltersAndRenderTable();
+        if (activeTrackObj) {
+          const updated = allFiles.find(f => f.rel_path === activeTrackObj.rel_path);
+          if (updated) {
+            activeTrackObj = updated;
+            updateNowPlayingCard(updated);
+          }
+        }
+      });
+    }
+
     // Restore previously active track (including exact playback position & playing state) or cue first song automatically
     if (activeTrackRelPath) {
       const restored = allFiles.find(f => f.rel_path === activeTrackRelPath);
@@ -2397,6 +2438,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (qcFilter === 'SAFE' && (Number.isNaN(tp) || tp > -1.0 || qc.spectral_status === 'FAKE_HQ')) return false;
         if (qcFilter === 'TRIM' && (Number.isNaN(tp) || tp <= -1.0 || tp > 0.0)) return false;
         if (qcFilter === 'CLIPPING' && (Number.isNaN(tp) || tp <= 0.0)) return false;
+        if (qcFilter === 'YT_PREMIUM' && !isYoutubePremiumMax(f.ext, qc)) return false;
         if (qcFilter === 'FAKE_HQ' && qc.spectral_status !== 'FAKE_HQ') return false;
       }
       return true;
@@ -2555,12 +2597,18 @@ document.addEventListener('DOMContentLoaded', () => {
       tdName.addEventListener('click', () => loadTrack(fileObj, false));
     }
 
-    // Column 3: Codec & Sample Rate
+    // Column 3: Codec, Bitrate & Sample Rate
     const tdCodec = document.createElement('td');
     tdCodec.className = 'mono-cell';
     const extLabel = (fileObj.ext || '').replace('.', '').toUpperCase();
+    const brNum = qc.bitrate_kbps ? Math.round(parseFloat(qc.bitrate_kbps)) : 0;
+    const brText = brNum > 0 ? ` • ${brNum} kbps` : '';
     const srText = qc.sample_rate_hz ? ` • ${(Number(qc.sample_rate_hz) / 1000).toFixed(1)} kHz` : '';
-    tdCodec.textContent = `${extLabel}${srText} (${fileObj.size_mb} MB)`;
+    tdCodec.appendChild(document.createTextNode(`${extLabel}${brText}${srText} (${fileObj.size_mb} MB)`));
+    const tierBadge = createQualityTierBadge(fileObj.ext, qc);
+    if (tierBadge) {
+      tdCodec.appendChild(tierBadge);
+    }
 
     // Column 4: Spectral Quality
     const tdSpec = document.createElement('td');
@@ -3707,7 +3755,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const androidRemoteModal = document.getElementById('androidRemoteModal');
   const btnOpenAndroidRemoteModal = document.getElementById('btnOpenAndroidRemoteModal');
   if (!isRemoteController) {
-    const nativeAdmin = initNativeRemoteAdmin({ document, renderQr: renderQrToCanvas });
+    const nativeAdmin = initNativeRemoteAdmin({
+      document,
+      renderQr: renderQrToCanvas,
+      getActiveSourceDir: () => (typeof currentSourceDir === 'string' ? currentSourceDir : ''),
+    });
     let nativeAdminTimer = null;
     function openAndroidRemoteModal() {
       if (!androidRemoteModal) return;
@@ -4149,6 +4201,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     },
   });
+  let lastUploadLibraryVersion = null;
   async function pushMasterStateAndPollCommands() {
     if (isRemoteController || isMasterSyncInFlight || isPageUnloading) return;
     isMasterSyncInFlight = true;
@@ -4173,6 +4226,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.native_catalog_synced === false) lastAckedNativeCatalogSig = '';
         else if (sentCatalogSig) lastAckedNativeCatalogSig = sentCatalogSig;
         if (data.pin) remotePin = data.pin;
+        if (typeof data.upload_library_version === 'number') {
+          if (lastUploadLibraryVersion !== null && data.upload_library_version > lastUploadLibraryVersion) {
+            fetchLibrary(currentSourceDir);
+          }
+          lastUploadLibraryVersion = data.upload_library_version;
+        }
         const cnt = Number(data.active_remotes_count) || 0;
         if (btnOpenRemoteModal && remoteHeaderLabel) {
           btnOpenRemoteModal.classList.toggle('connected', cnt > 0);
@@ -4350,10 +4409,16 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           remoteConnStatus.className = 'remote-conn-status err';
         }
+        if (phoneUploadCtrl) {
+          phoneUploadCtrl.applyRemoteState({ upload_enabled: false });
+        }
         return;
       }
       if (res.ok) {
         const data = await res.json();
+        if (phoneUploadCtrl) {
+          phoneUploadCtrl.applyRemoteState(data);
+        }
         if (remoteConnStatus) {
           if (data.master_online) {
             if (data.role === 'view_only') {
@@ -4381,6 +4446,16 @@ document.addEventListener('DOMContentLoaded', () => {
       isRemotePollInFlight = false;
     }
   }
+
+  const phoneUploadCtrl = initPhoneUploadController({
+    document,
+    isRemoteController,
+    getRemoteCredentials: () => ({ pin: remotePin, clientId: remoteClientId }),
+    getPlaylists: () => allPlaylists,
+    getCurrentSourceDir: () => currentSourceDir || defaultInboxDir || '',
+    notify,
+    onUploadCompleted: () => fetchLibrary(currentSourceDir),
+  });
 
   function initRemoteModeEngine() {
     syncRemotePinButtonText();

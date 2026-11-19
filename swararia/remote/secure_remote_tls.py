@@ -274,8 +274,7 @@ class NativeHandler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError, RecursionError):
             raise RemoteError('invalid_json', 400) from None
 
-    def _serve_media(self, token, track_id, owner):
-        media_ref = owner.authorize_media(token, track_id)
+    def _serve_authorized_media(self, media_ref, owner):
         if not self.server.media_slots.acquire(blocking=False):
             raise RemoteError('media_busy', 429)
         stream = None
@@ -324,16 +323,96 @@ class NativeHandler(BaseHTTPRequestHandler):
                 stream.close()
             self.server.media_slots.release()
 
+    def _serve_media(self, token, track_id, owner):
+        media_ref = owner.authorize_media(token, track_id)
+        self._serve_authorized_media(media_ref, owner)
+
+    def _serve_sync_file(self, token, file_id, owner):
+        media_ref = owner.authorize_sync_file(token, file_id)
+        self._serve_authorized_media(media_ref, owner)
+
+    @staticmethod
+    def _decode_percent_header(raw_value, error_code):
+        if raw_value is None:
+            return None
+        try:
+            decoded = urllib.parse.unquote(str(raw_value), encoding='utf-8', errors='strict').strip()
+        except UnicodeDecodeError:
+            raise RemoteError(error_code, 400) from None
+        if '\x00' in decoded:
+            raise RemoteError(error_code, 400)
+        return decoded
+
+    def _handle_library_upload(self, owner):
+        token = self._token()
+        dest_root, upload_handler = owner.authorize_upload(token)
+
+        content_type = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        if content_type != 'application/octet-stream':
+            raise RemoteError('binary_required', 415)
+
+        lengths = self.headers.get_all('Content-Length', [])
+        if self.headers.get_all('Transfer-Encoding') or len(lengths) != 1 or not re.fullmatch(r'[0-9]{1,10}', lengths[0]):
+            raise RemoteError('invalid_length', 400)
+        content_length = int(lengths[0])
+        if content_length <= 0:
+            raise RemoteError('invalid_length', 400)
+        if content_length > owner.MAX_MEDIA_BYTES:
+            self.close_connection = True
+            raise RemoteError('media_too_large', 413)
+
+        raw_name = self.headers.get('X-Swararia-Filename')
+        if not raw_name:
+            raise RemoteError('missing_filename', 400)
+        filename = self._decode_percent_header(raw_name, 'invalid_filename')
+        if not filename:
+            raise RemoteError('invalid_filename', 400)
+
+        sha_header = (self.headers.get('X-Swararia-Sha256') or '').strip().lower()
+        if not sha_header:
+            raise RemoteError('missing_sha256', 400)
+        if not re.fullmatch(r'[0-9a-f]{64}', sha_header):
+            raise RemoteError('invalid_sha256', 400)
+
+        raw_playlist = self.headers.get('X-Swararia-Playlist')
+        playlist_name = self._decode_percent_header(raw_playlist, 'invalid_playlist') if raw_playlist is not None else None
+        if playlist_name == '':
+            playlist_name = None
+
+        if not self.server.media_slots.acquire(blocking=False):
+            raise RemoteError('media_busy', 429)
+        try:
+            self.server.extend_deadline(self.server.MEDIA_CONNECTION_TTL)
+            try:
+                self.connection.settimeout(15)
+            except (OSError, ValueError):
+                pass
+            return upload_handler(self.rfile, content_length, dest_root, filename, sha_header, playlist_name)
+        finally:
+            self.server.media_slots.release()
+
     def _dispatch(self):
         owner = self.server.owner
         self.server.rate('all')
-        fixed = {'/v1/pair', '/v1/session', '/v1/capabilities', '/v1/state', '/v1/tracks', '/v1/commands'}
+        fixed = {
+            '/v1/pair', '/v1/session', '/v1/capabilities', '/v1/state',
+            '/v1/tracks', '/v1/commands', '/v1/sync/folders', '/v1/sync/manifest',
+            '/v1/library/upload',
+        }
         status_route = re.fullmatch(r'/v1/commands/([A-Za-z0-9_-]{24})', self.path)
         media_route = re.fullmatch(r'/v1/tracks/([A-Za-z0-9_-]{3,32})/media', self.path)
-        if self.path not in fixed and not status_route and not media_route:
+        sync_file_route = re.fullmatch(r'/v1/sync/files/(fil_[0-9a-f]{20})', self.path)
+        if self.path not in fixed and not status_route and not media_route and not sync_file_route:
             raise RemoteError('unknown_route', 404)
         if self.headers.get('Origin') or self.headers.get('Sec-Fetch-Site'):
             raise RemoteError('native_clients_only')
+        extended = self.headers.get_all('X-Swararia-Capabilities', []) == ['extended-v1']
+        if (self.path.startswith('/v1/sync/') or sync_file_route is not None or self.path == '/v1/library/upload') and not extended:
+            raise RemoteError('unsupported_capabilities', 400)
+        if self.path == '/v1/library/upload':
+            if self.command != 'POST':
+                raise RemoteError('method_not_allowed', 405)
+            return self._handle_library_upload(owner)
         if self.command == 'POST':
             payload = self._body()
             if self.path == '/v1/pair':
@@ -341,6 +420,15 @@ class NativeHandler(BaseHTTPRequestHandler):
                 if set(payload) != {'label'}:
                     raise RemoteError('invalid_fields', 400)
                 return 202, owner.pair(self._token(), payload['label'])
+            if self.path == '/v1/sync/manifest':
+                if not {'folder_id'} <= set(payload) or (set(payload) - {'folder_id', 'offset', 'limit'}):
+                    raise RemoteError('invalid_fields', 400)
+                return 200, owner.sync_manifest(
+                    self._token(),
+                    payload['folder_id'],
+                    offset=payload.get('offset', 0),
+                    limit=payload.get('limit', 100),
+                )
             if self.path == '/v1/commands':
                 action = payload.get('action')
                 if action == 'select_track':
@@ -362,7 +450,7 @@ class NativeHandler(BaseHTTPRequestHandler):
                     raise RemoteError('invalid_fields', 400)
                 return 202, owner.command(self._token(), action, payload['idempotency_key'])
             raise RemoteError('method_not_allowed', 405)
-        allowed_read = self.command == 'GET' or (self.command == 'HEAD' and media_route is not None)
+        allowed_read = self.command == 'GET' or (self.command == 'HEAD' and (media_route is not None or sync_file_route is not None))
         if not allowed_read:
             raise RemoteError('method_not_allowed', 405)
         if self.headers.get_all('Transfer-Encoding') or self.headers.get('Content-Length', '0') != '0':
@@ -371,6 +459,11 @@ class NativeHandler(BaseHTTPRequestHandler):
         if media_route:
             self._serve_media(token, media_route[1], owner)
             return None
+        if sync_file_route:
+            self._serve_sync_file(token, sync_file_route[1], owner)
+            return None
+        if self.path == '/v1/sync/folders':
+            return 200, owner.sync_folders(token)
         if self.path == '/v1/session':
             return 200, owner.session(token)
         if self.path == '/v1/state':
@@ -380,7 +473,6 @@ class NativeHandler(BaseHTTPRequestHandler):
         if status_route:
             return 200, owner.command_status(token, status_route[1])
         if self.path == '/v1/capabilities':
-            extended = self.headers.get_all('X-Swararia-Capabilities', []) == ['extended-v1']
             return 200, owner.capabilities_for(token, extended=extended)
         raise RemoteError('method_not_allowed', 405)
 

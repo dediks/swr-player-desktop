@@ -166,6 +166,9 @@
         </div>
 
         <div class="library-actions">
+          <button type="button" id="btnOpenPcSyncModal" class="btn-accent" title="Sinkronisasi folder playlist dari PC Swararia lain di LAN">
+            <span>Sinkronisasi PC &harr; PC</span>
+          </button>
           <button type="button" id="btnOpenExplorer" class="btn-secondary" title="Open the source folder in File Explorer">
             <span>Explorer</span>
           </button>
@@ -285,6 +288,79 @@
       <div class="modal-footer">
         <button type="button" id="btnCancelModal" class="btn-secondary">Cancel</button>
         <button type="button" id="btnSelectModalDir" class="btn-primary">Choose This Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PC <-> PC HTTPS Pinned Folder Sync Modal -->
+  <div class="modal-backdrop hidden" id="pcSyncModal" role="dialog" aria-modal="true" aria-labelledby="pcSyncModalTitle">
+    <div class="modal-card remote-modal-card sync-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="pcSyncModalTitle">Sinkronisasi Folder PC &harr; PC (HTTPS)</h3>
+        <button type="button" id="btnClosePcSyncModal" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="transfer-warning-strip">
+          <strong>Peringatan Fase Ini:</strong> Hanya file audio terkompresi (.mp3, .m4a, .mp4, .aac, .opus, .ogg, .webm) hingga 150 MiB/file yang disinkronkan. File <strong>.wav &amp; .flac</strong> dilewati; duplikat SHA-256 otomatis dilewati dan nama bentrok di-rename otomatis.
+        </div>
+
+        <section id="pcSyncPairSection" class="sync-section-stack">
+          <p class="panel-sub">Buka menu <strong>Android Remote</strong> di PC sumber &rarr; aktifkan &amp; centang <em>Izinkan sinkronisasi folder PC &harr; PC</em> &rarr; salin kode pairing sekali pakai lalu tempel di sini.</p>
+          <div class="field-group compact-field">
+            <label for="syncDeviceLabelInput" class="field-label">Nama PC Penerima</label>
+            <input type="text" id="syncDeviceLabelInput" class="toolbar-input" value="Swararia PC Sync" maxlength="80">
+          </div>
+          <div class="field-group compact-field">
+            <label for="syncPairingCodeInput" class="field-label">Kode Pairing PC Sumber (<code>swararia1|...</code>)</label>
+            <textarea id="syncPairingCodeInput" class="toolbar-input" rows="3" spellcheck="false" autocomplete="off" placeholder="swararia1|192.168.1.10:8766|...|..."></textarea>
+          </div>
+          <div class="sync-action-row">
+            <button type="button" id="btnStartPcSyncPair" class="btn-primary">Hubungkan (HTTPS Pinning)</button>
+          </div>
+        </section>
+
+        <section id="pcSyncBrowseSection" class="sync-section-stack hidden">
+          <div class="remote-status-strip">
+            <div class="remote-status-info">
+              <strong id="pcSyncPeerStatus">Terhubung</strong>
+              <code id="pcSyncPeerFingerprint" class="sync-fingerprint-code">—</code>
+            </div>
+            <div class="transfer-btn-pair">
+              <button type="button" id="btnRefreshPcSyncPeer" class="btn-chip">Refresh</button>
+              <button type="button" id="btnDisconnectPcSyncPeer" class="btn-danger btn-sm">Putus</button>
+            </div>
+          </div>
+
+          <div class="remote-status-strip">
+            <span class="remote-status-title">Folder Tujuan Lokal (PC Ini):</span>
+            <code id="pcSyncDestLabel" class="source-location-badge">library/inbox</code>
+          </div>
+
+          <div id="pcSyncWarningBanner" class="transfer-warning-strip is-warn hidden">
+            <span id="pcSyncWarningText"></span>
+          </div>
+
+          <div class="sync-folders-header">
+            <span class="field-label">Pilih Folder Playlist dari PC Sumber</span>
+            <div class="transfer-btn-pair">
+              <button type="button" id="btnPcSyncSelectAll" class="btn-chip">Pilih Semua</button>
+              <button type="button" id="btnPcSyncClearFolders" class="btn-chip">Kosongkan</button>
+            </div>
+          </div>
+          <div id="pcSyncFoldersList" class="sync-folders-list"></div>
+
+          <div id="pcSyncDiffBox" class="sync-diff-box hidden">
+            <div id="pcSyncDiffSummary" class="sync-diff-summary"></div>
+            <div id="pcSyncDiffPreviewList" class="sync-diff-list"></div>
+          </div>
+        </section>
+
+        <p id="pcSyncFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPcSyncModal" class="btn-secondary">Tutup</button>
+        <button type="button" id="btnPreviewPcSync" class="btn-secondary" disabled>Pratinjau Diff</button>
+        <button type="button" id="btnExecutePcSync" class="btn-primary" disabled>Mulai Sinkronisasi</button>
       </div>
     </div>
   </div>

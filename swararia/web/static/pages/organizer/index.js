@@ -19,6 +19,7 @@ import {
   saveSharedWorkspaceState,
 } from '../../modules/ui-shared.js';
 import { initFolderModal } from '../../modules/folder-modal.js';
+import { initPcSyncPanel } from '../../modules/pc-sync-panel.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   initAppHeader({ activePage: 'organizer' });
@@ -1058,4 +1059,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
   fetchLibrary(currentSourceDir);
   refreshUndoState();
+
+  let activeSyncWatchTimer = null;
+  function watchQueuedSyncJob(jobId) {
+    if (activeSyncWatchTimer !== null) {
+      clearInterval(activeSyncWatchTimer);
+      activeSyncWatchTimer = null;
+    }
+    let polls = 0;
+    const checkQueue = async () => {
+      polls += 1;
+      try {
+        const { ok, data } = await apiGet('/api/queue');
+        if (ok && data) {
+          const hist = Array.isArray(data.history) ? data.history : [];
+          const queued = Array.isArray(data.queue) ? data.queue : [];
+          const activeId = data.current?.id;
+          const stillQueued = jobId
+            ? (activeId === jobId || queued.some(j => j && j.id === jobId))
+            : Boolean(data.current && data.current.type === 'sync');
+          const finishedEntry = jobId
+            ? hist.find(j => j && j.id === jobId)
+            : hist.find(j => j && j.type === 'sync');
+          if (!stillQueued && (finishedEntry || polls >= 3)) {
+            clearInterval(activeSyncWatchTimer);
+            activeSyncWatchTimer = null;
+            await fetchLibrary(currentSourceDir);
+            return;
+          }
+        }
+      } catch (_) {
+        // Ignore transient poll errors and retry on next interval
+      }
+      if (polls >= 600) {
+        clearInterval(activeSyncWatchTimer);
+        activeSyncWatchTimer = null;
+      }
+    };
+    activeSyncWatchTimer = setInterval(checkQueue, 1000);
+    setTimeout(checkQueue, 350);
+  }
+
+  initPcSyncPanel({
+    document,
+    apiGet,
+    apiPost,
+    notify,
+    getTargetDestDir: () => currentSourceDir || defaultInboxDir || '',
+    getTargetDestLabel: () => (activeSourceBadge ? activeSourceBadge.textContent : 'library/inbox'),
+    onSyncQueued: (jobId) => {
+      watchQueuedSyncJob(jobId);
+    },
+  });
 });

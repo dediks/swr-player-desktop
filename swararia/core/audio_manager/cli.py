@@ -154,8 +154,14 @@ def download(args) -> int:
                 info = audio_analysis.metadata(nf)
                 sr = f"{info['sample_rate_hz']} Hz" if info.get("sample_rate_hz") else "?"
                 br = f"{info['bitrate_kbps']} kbps" if info.get("bitrate_kbps") else "VBR"
+                q_tier = audio_analysis.classify_audio_quality_tier(
+                    codec=str(info.get("codec") or ""),
+                    bitrate_kbps=info.get("bitrate_kbps"),
+                    ext=nf.suffix.lower(),
+                )
+                prem_flag = " | ★ HIGHEST QUALITY (YT PREMIUM)" if q_tier.get("is_highest_quality") and q_tier.get("is_youtube_premium") else ""
                 print(
-                    f"[STREAM VERIFIED] {nf.name} | Codec: {info['codec']} | Sample Rate: {sr} | Bitrate: {br}",
+                    f"[STREAM VERIFIED] {nf.name} | Codec: {info['codec']} | Sample Rate: {sr} | Bitrate: {br}{prem_flag}",
                     flush=True,
                 )
             except Exception:

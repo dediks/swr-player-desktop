@@ -49,6 +49,10 @@ class SecureRemote:
     MAX_MEDIA_BYTES = 150 * 1024 * 1024
     MAX_SHA_CACHE = 512
     DOWNLOADABLE_EXTENSIONS = frozenset({'.mp3', '.m4a', '.mp4', '.aac', '.opus', '.ogg', '.webm', '.flac', '.wav'})
+    SYNC_EXTENSIONS = frozenset({'.mp3', '.m4a', '.mp4', '.aac', '.opus', '.ogg', '.webm'})
+    EXCLUDED_SYNC_EXTENSIONS = frozenset({'.wav', '.flac'})
+    SYNC_FOLDER_ID_RE = re.compile(r'^(root|fld_[0-9a-f]{16})$')
+    SYNC_FILE_ID_RE = re.compile(r'^fil_[0-9a-f]{20}$')
     MEDIA_MIME_FALLBACKS = {
         '.mp3': 'audio/mpeg',
         '.m4a': 'audio/mp4',
@@ -61,13 +65,22 @@ class SecureRemote:
         '.wav': 'audio/wav',
     }
 
-    def __init__(self, hub, clock=time.time, media_resolver=None, default_inbox=None):
+    def __init__(self, hub, clock=time.time, media_resolver=None, default_inbox=None, sync_scanner=None, upload_handler=None):
         self.hub, self.clock = hub, clock
         self.media_resolver = media_resolver
         self.default_inbox = default_inbox
+        self.sync_scanner = sync_scanner
+        self.upload_handler = upload_handler
         self.lock = threading.RLock()
         self.enabled = False
         self.media_transfer_enabled = False
+        self.sync_enabled = False
+        self.sync_source_dir = None
+        self.sync_source_label = 'library/inbox'
+        self.upload_enabled = False
+        self.upload_dest_dir = None
+        self.upload_dest_label = 'library/inbox'
+        self._sync_cache = {}
         self.session_id = None
         self.invite = None
         self.devices = {}
@@ -148,6 +161,9 @@ class SecureRemote:
         with self.lock:
             self.enabled = False
             self.media_transfer_enabled = False
+            self.sync_enabled = False
+            self.upload_enabled = False
+            self._sync_cache.clear()
             self.invite = None
             self.devices.clear()
             self.records.clear()
@@ -543,8 +559,43 @@ class SecureRemote:
             raise RemoteError('invalid_media_flag', 400)
         with self.lock:
             self.media_transfer_enabled = enabled
-            if not enabled:
+            if not enabled and not self.sync_enabled:
                 self._sha_cache.clear()
+
+    def set_sync_enabled(self, enabled, source_dir=None, source_label=None):
+        if type(enabled) is not bool:
+            raise RemoteError('invalid_sync_flag', 400)
+        with self.lock:
+            self.sync_enabled = enabled
+            if source_dir is not None:
+                clean = str(source_dir).strip()
+                self.sync_source_dir = clean or None
+            if source_label is not None:
+                self.sync_source_label = str(source_label).strip() or 'library/inbox'
+            self._sync_cache.clear()
+            if not enabled and not self.media_transfer_enabled:
+                self._sha_cache.clear()
+
+    def set_upload_enabled(self, enabled, dest_dir=None, dest_label=None):
+        if type(enabled) is not bool:
+            raise RemoteError('invalid_upload_flag', 400)
+        with self.lock:
+            self.upload_enabled = enabled
+            if dest_dir is not None:
+                clean = str(dest_dir).strip()
+                self.upload_dest_dir = clean or None
+            if dest_label is not None:
+                self.upload_dest_label = str(dest_label).strip() or 'library/inbox'
+
+    def authorize_upload(self, token):
+        with self.lock:
+            self._device(token, active=True, control=True)
+            if not self.upload_enabled or self.upload_handler is None:
+                raise RemoteError('upload_disabled', 403)
+            dest_root = self.upload_dest_dir or (str(self.default_inbox) if self.default_inbox is not None else None)
+            if not dest_root:
+                raise RemoteError('upload_disabled', 403)
+            return dest_root, self.upload_handler
 
     def capabilities_for(self, token, extended=False):
         with self.lock:
@@ -556,14 +607,218 @@ class SecureRemote:
                 and self.media_resolver is not None
                 and device['role'] == 'control'
             )
+            can_sync = bool(
+                extended
+                and self.sync_enabled
+                and self.sync_scanner is not None
+                and self.media_resolver is not None
+                and device['role'] == 'control'
+            )
+            can_upload = bool(
+                extended
+                and self.upload_enabled
+                and self.upload_handler is not None
+                and device['role'] == 'control'
+            )
             return {
                 'protocol': 'v1',
                 'commands': actions,
                 'media': can_download,
+                'sync': can_sync,
+                'upload': can_upload,
                 'media_max_bytes': self.MAX_MEDIA_BYTES,
                 'command_ttl_seconds': self.COMMAND_TTL,
                 'idempotency_ttl_seconds': self.RECORD_TTL,
             }
+
+    def _refresh_sync_index(self, expected_session_id, sync_root):
+        folder_list, folder_files, summary = self.sync_scanner(sync_root)
+        files_by_id = {}
+        root_str = str(sync_root)
+        for fid, entries in folder_files.items():
+            for entry in entries:
+                files_by_id[entry['file_id']] = {
+                    **entry,
+                    'source_dir': root_str,
+                }
+        folder_map = {f['folder_id']: f for f in folder_list}
+        snapshot = {
+            'session_id': expected_session_id,
+            'root_str': root_str,
+            'folders': folder_list,
+            'folder_map': folder_map,
+            'folder_files': folder_files,
+            'files_by_id': files_by_id,
+            'summary': summary,
+            'cached_at': self.clock(),
+        }
+        with self.lock:
+            if self.enabled and self.session_id == expected_session_id and self.sync_enabled:
+                self._sync_cache = snapshot
+        return snapshot
+
+    def _get_sync_snapshot(self, force_refresh=False):
+        with self.lock:
+            if not self.sync_enabled or self.sync_scanner is None or self.media_resolver is None:
+                raise RemoteError('sync_disabled', 403)
+            sync_root = self.sync_source_dir or self.default_inbox
+            if sync_root is None:
+                raise RemoteError('sync_disabled', 403)
+            session_id = self.session_id
+            cached = self._sync_cache
+            if (
+                not force_refresh
+                and cached
+                and cached.get('session_id') == session_id
+                and cached.get('root_str') == str(sync_root)
+                and (self.clock() - float(cached.get('cached_at') or 0.0)) < 2.0
+            ):
+                return cached
+        try:
+            return self._refresh_sync_index(session_id, sync_root)
+        except (ValueError, OSError):
+            raise RemoteError('sync_unavailable', 409) from None
+
+    @staticmethod
+    def _sync_warnings_for(wav_flac_count, oversized_count):
+        warnings = []
+        if wav_flac_count > 0:
+            warnings.append(
+                f"{wav_flac_count} file .wav/.flac dilewati karena WAV/FLAC belum didukung pada fase sinkronisasi ini."
+            )
+        if oversized_count > 0:
+            warnings.append(
+                f"{oversized_count} file melebihi batas 150 MiB per file sehingga tidak disertakan."
+            )
+        return warnings
+
+    def sync_folders(self, token):
+        with self.lock:
+            self._device(token, active=True, control=True)
+        snap = self._get_sync_snapshot(force_refresh=True)
+        summary = snap.get('summary') or {}
+        wav_count = int(summary.get('excluded_wav_flac_count') or 0)
+        over_count = int(summary.get('oversized_count') or 0)
+        folders = [
+            {
+                'folder_id': f['folder_id'],
+                'rel_folder': f['rel_folder'],
+                'name': f['name'],
+                'track_count': f['track_count'],
+                'total_bytes': f['total_bytes'],
+                'excluded_wav_flac_count': f['excluded_wav_flac_count'],
+                'oversized_count': f['oversized_count'],
+            }
+            for f in snap.get('folders', [])
+        ]
+        return {
+            'protocol': 'v1',
+            'folders': folders,
+            'excluded_wav_flac_count': wav_count,
+            'oversized_count': over_count,
+            'warnings': self._sync_warnings_for(wav_count, over_count),
+        }
+
+    def _compute_entry_sha256(self, expected_session_id, entry):
+        path_obj = entry.get('_abs_path')
+        if path_obj is None:
+            raise RemoteError('media_unavailable', 404)
+        cache_key = str(path_obj)
+        size_bytes = int(entry['size_bytes'])
+        mtime_ns = int(entry['mtime_ns'])
+        with self.lock:
+            if not self.enabled or self.session_id != expected_session_id or not self.sync_enabled:
+                raise RemoteError('sync_disabled', 403)
+            cached = self._sha_cache.get(cache_key)
+            if cached and cached[0] == size_bytes and cached[1] == mtime_ns:
+                return cached[2]
+
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+        try:
+            fd = os.open(path_obj, flags)
+        except OSError:
+            raise RemoteError('media_unavailable', 404) from None
+        hasher = hashlib.sha256()
+        try:
+            with os.fdopen(fd, 'rb') as stream:
+                st = os.fstat(stream.fileno())
+                if not stat.S_ISREG(st.st_mode) or st.st_size <= 0 or st.st_size > self.MAX_MEDIA_BYTES:
+                    raise RemoteError('media_unavailable', 404)
+                while True:
+                    chunk = stream.read(65536)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+        except RemoteError:
+            raise
+        except OSError:
+            raise RemoteError('media_unavailable', 404) from None
+        digest = hasher.hexdigest()
+        with self.lock:
+            if self.enabled and self.session_id == expected_session_id and self.sync_enabled:
+                if len(self._sha_cache) >= self.MAX_SHA_CACHE:
+                    self._sha_cache.clear()
+                self._sha_cache[cache_key] = (size_bytes, mtime_ns, digest)
+        return digest
+
+    def sync_manifest(self, token, folder_id, offset=0, limit=100):
+        if not isinstance(folder_id, str) or not self.SYNC_FOLDER_ID_RE.fullmatch(folder_id):
+            raise RemoteError('invalid_folder', 400)
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
+            raise RemoteError('invalid_pagination', 400)
+        with self.lock:
+            self._device(token, active=True, control=True)
+            expected_session_id = self.session_id
+        snap = self._get_sync_snapshot(force_refresh=(offset == 0))
+        folder_meta = (snap.get('folder_map') or {}).get(folder_id)
+        if folder_meta is None:
+            raise RemoteError('unknown_folder', 404)
+        all_entries = (snap.get('folder_files') or {}).get(folder_id, [])
+        total = len(all_entries)
+        page_entries = all_entries[offset:offset + limit]
+        items = []
+        for entry in page_entries:
+            sha256_hex = self._compute_entry_sha256(expected_session_id, entry)
+            items.append({
+                'file_id': entry['file_id'],
+                'name': entry['name'],
+                'rel_path': entry['rel_path'],
+                'ext': entry['ext'],
+                'size_bytes': entry['size_bytes'],
+                'sha256': sha256_hex,
+            })
+        next_offset = offset + len(page_entries) if (offset + len(page_entries)) < total else None
+        wav_count = int(folder_meta.get('excluded_wav_flac_count') or 0)
+        over_count = int(folder_meta.get('oversized_count') or 0)
+        return {
+            'protocol': 'v1',
+            'folder_id': folder_id,
+            'rel_folder': folder_meta['rel_folder'],
+            'folder_name': folder_meta['name'],
+            'total': total,
+            'offset': offset,
+            'next_offset': next_offset,
+            'excluded_wav_flac_count': wav_count,
+            'oversized_count': over_count,
+            'warnings': self._sync_warnings_for(wav_count, over_count),
+            'files': items,
+        }
+
+    def authorize_sync_file(self, token, file_id):
+        if not isinstance(file_id, str) or not self.SYNC_FILE_ID_RE.fullmatch(file_id):
+            raise RemoteError('unknown_route', 404)
+        with self.lock:
+            self._device(token, active=True, control=True)
+            if not self.sync_enabled or self.sync_scanner is None or self.media_resolver is None:
+                raise RemoteError('sync_disabled', 403)
+            entry = (self._sync_cache.get('files_by_id') or {}).get(file_id)
+            session_id = self.session_id
+        if entry is None:
+            snap = self._get_sync_snapshot(force_refresh=True)
+            entry = (snap.get('files_by_id') or {}).get(file_id)
+        if not entry:
+            raise RemoteError('media_unavailable', 404)
+        return entry['source_dir'], entry['rel_path'], session_id, 'sync'
 
     def authorize_media(self, token, track_id):
         if not isinstance(track_id, str) or not self.TRACK_ID_RE.fullmatch(track_id):
@@ -587,9 +842,13 @@ class SecureRemote:
         return cleaned or 'track.audio'
 
     def open_media_file(self, media_ref, need_stream=True):
-        source_dir, rel_path, expected_session_id = media_ref
+        if len(media_ref) == 4:
+            source_dir, rel_path, expected_session_id, mode = media_ref
+        else:
+            source_dir, rel_path, expected_session_id = media_ref
+            mode = 'media'
         if self.media_resolver is None:
-            raise RemoteError('media_disabled', 403)
+            raise RemoteError('sync_disabled' if mode == 'sync' else 'media_disabled', 403)
         try:
             target_path, mime_type = self.media_resolver(source_dir, rel_path, self.default_inbox)
         except FileNotFoundError:
@@ -598,7 +857,12 @@ class SecureRemote:
             raise RemoteError('media_forbidden', 403) from None
 
         ext = target_path.suffix.lower()
-        if ext not in self.DOWNLOADABLE_EXTENSIONS:
+        if mode == 'sync':
+            if ext in self.EXCLUDED_SYNC_EXTENSIONS:
+                raise RemoteError('wav_flac_excluded', 415)
+            if ext not in self.SYNC_EXTENSIONS:
+                raise RemoteError('unsupported_media_format', 415)
+        elif ext not in self.DOWNLOADABLE_EXTENSIONS:
             raise RemoteError('unsupported_media_format', 415)
         if not isinstance(mime_type, str) or not mime_type.lower().startswith('audio/'):
             mime_type = self.MEDIA_MIME_FALLBACKS[ext]
@@ -628,8 +892,9 @@ class SecureRemote:
             cache_key = str(target_path)
             sha256_hex = None
             with self.lock:
-                if not self.enabled or self.session_id != expected_session_id or not self.media_transfer_enabled:
-                    raise RemoteError('media_disabled', 403)
+                feature_ok = self.sync_enabled if mode == 'sync' else self.media_transfer_enabled
+                if not self.enabled or self.session_id != expected_session_id or not feature_ok:
+                    raise RemoteError('sync_disabled' if mode == 'sync' else 'media_disabled', 403)
                 cached = self._sha_cache.get(cache_key)
                 if cached and cached[0] == st.st_size and cached[1] == st.st_mtime_ns:
                     sha256_hex = cached[2]
@@ -643,7 +908,8 @@ class SecureRemote:
                     hasher.update(chunk)
                 sha256_hex = hasher.hexdigest()
                 with self.lock:
-                    if self.enabled and self.session_id == expected_session_id and self.media_transfer_enabled:
+                    feature_ok = self.sync_enabled if mode == 'sync' else self.media_transfer_enabled
+                    if self.enabled and self.session_id == expected_session_id and feature_ok:
                         if len(self._sha_cache) >= self.MAX_SHA_CACHE:
                             self._sha_cache.clear()
                         self._sha_cache[cache_key] = (st.st_size, st.st_mtime_ns, sha256_hex)
@@ -670,6 +936,12 @@ class SecureRemote:
                     self._cancel_device_commands(d['device_id'])
             status = {'enabled': self.enabled, 'protocol': 'v1', **self.connection_info,
                       'media_transfer_enabled': bool(self.media_transfer_enabled),
+                      'sync_enabled': bool(self.sync_enabled),
+                      'sync_source_dir': self.sync_source_dir or '',
+                      'sync_source_label': self.sync_source_label,
+                      'upload_enabled': bool(self.upload_enabled),
+                      'upload_dest_dir': self.upload_dest_dir or '',
+                      'upload_dest_label': self.upload_dest_label,
                       'invite': self.invite[0] if self.invite else None,
                       'invite_expires_at': self.invite[1] if self.invite else None,
                       'devices': [{k: d[k] for k in ('device_id', 'label', 'status', 'role', 'expires_at')}

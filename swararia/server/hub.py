@@ -137,6 +137,11 @@ class RemotePlayerHub:
         self.remote_clients: dict[str, dict] = {}
         self.blocked_clients: dict[str, dict] = {}
         self.client_roles: dict[str, str] = {}
+        self.upload_enabled: bool = False
+        self.upload_dest_dir: str = ""
+        self.upload_dest_label: str = "library/inbox"
+        self.library_revision: int = 0
+        self._upload_rate_buckets: dict[str, list[float]] = {}
 
     def _prune_clients_unlocked(self, now: float) -> None:
         stale = [
@@ -325,6 +330,59 @@ class RemotePlayerHub:
             self.command_queue = [c for c in self.command_queue if not include_native and c.get("native_id")]
             return pending, len(self.remote_clients), self.pin, self.enabled
 
+    def set_upload_config(
+        self,
+        enabled: bool | None = None,
+        dest_dir: str | None = None,
+        dest_label: str | None = None,
+    ) -> dict:
+        with self.lock:
+            if isinstance(enabled, bool):
+                self.upload_enabled = enabled
+            if dest_dir is not None:
+                self.upload_dest_dir = str(dest_dir).strip()
+            if dest_label is not None:
+                self.upload_dest_label = str(dest_label).strip() or "library/inbox"
+            return {
+                "upload_enabled": bool(self.upload_enabled),
+                "upload_dest_dir": self.upload_dest_dir,
+                "upload_dest_label": self.upload_dest_label,
+            }
+
+    def get_upload_config(self) -> dict:
+        with self.lock:
+            return {
+                "upload_enabled": bool(self.upload_enabled),
+                "upload_dest_dir": self.upload_dest_dir,
+                "upload_dest_label": self.upload_dest_label,
+            }
+
+    def bump_library_revision(self) -> int:
+        with self.lock:
+            self.library_revision += 1
+            return self.library_revision
+
+    def get_library_revision(self) -> int:
+        with self.lock:
+            return self.library_revision
+
+    def check_upload_rate_limit(self, client_id: str, capacity: float = 30.0, refill_per_sec: float = 1.0) -> bool:
+        now = time.monotonic()
+        with self.lock:
+            if len(self._upload_rate_buckets) > 128:
+                self._upload_rate_buckets.clear()
+            bucket = self._upload_rate_buckets.get(client_id)
+            if bucket is None:
+                bucket = [capacity, now]
+                self._upload_rate_buckets[client_id] = bucket
+            elapsed = max(0.0, now - bucket[1])
+            bucket[0] = min(capacity, bucket[0] + elapsed * refill_per_sec)
+            bucket[1] = now
+            if bucket[0] < 1.0:
+                return False
+            bucket[0] -= 1.0
+            return True
+
     def get_remote_state(
         self,
         client_id: str,
@@ -339,6 +397,8 @@ class RemotePlayerHub:
             return {
                 "ok": True,
                 "enabled": self.enabled,
+                "upload_enabled": bool(self.upload_enabled),
+                "upload_dest_label": self.upload_dest_label,
                 "role": self.client_roles.get(client_id, "control"),
                 "master_online": (now - self.master_updated_at) < 5.0,
                 "master_updated_at": self.master_updated_at,

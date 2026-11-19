@@ -43,6 +43,10 @@ class GetRoutesMixin:
                 self.send_json(403, {"error": "Akses jaringan lokal hanya diizinkan untuk FOH Mobile Remote (/player)."})
                 return
 
+        if path == '/api/sync/status':
+            self._handle_get_sync_status()
+            return
+
         if path == '/api/native-remote':
             if not self.local_request_allowed():
                 self.send_json(403, {'code': 'local_origin_required'})
@@ -117,10 +121,13 @@ class GetRoutesMixin:
             actual_port = int(self.server.server_address[1])
             remote_port = network._get_wsl_remote_bridge_port(actual_port)
             active_list, blocked_list = hub.remote_hub.get_clients_lists()
+            upload_cfg = hub.remote_hub.get_upload_config()
             info: dict = {
                 "ok": True,
                 "is_localhost": is_local,
                 "enabled": hub.remote_hub.enabled,
+                "upload_enabled": upload_cfg["upload_enabled"],
+                "upload_dest_label": upload_cfg["upload_dest_label"],
                 "port": remote_port,
                 "lan_ips": lan_ips,
                 "master_online": (time.time() - hub.remote_hub.master_updated_at) < 5.0,
@@ -128,6 +135,7 @@ class GetRoutesMixin:
             }
             if is_local:
                 info["pin"] = hub.remote_hub.pin
+                info["upload_dest_dir"] = upload_cfg["upload_dest_dir"]
                 info["active_remotes"] = active_list
                 info["blocked_remotes"] = blocked_list
                 info["interfaces"] = [

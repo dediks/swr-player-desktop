@@ -22,6 +22,8 @@
 /api/remote/command
 /api/remote/info
 /api/remote/state
+/api/remote/upload
+/api/remote/upload-config
 /api/remote/wsl-bridge
 /api/rename
 /api/resample
@@ -33,6 +35,12 @@
 /api/splitter/youtube-info
 /api/stream
 /api/stream-preview
+/api/sync/disconnect
+/api/sync/pair
+/api/sync/preview
+/api/sync/refresh
+/api/sync/start
+/api/sync/status
 /api/system
 /api/undo-rename
 /converter

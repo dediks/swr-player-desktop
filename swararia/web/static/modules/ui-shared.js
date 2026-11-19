@@ -108,13 +108,37 @@ export function createSpectralBadge(qc) {
 }
 
 /**
- * Creates a concise stream quality tier badge (LOSSLESS or HQ >=192 kbps).
+ * Returns true if the track metadata represents the highest-quality YouTube Premium stream
+ * (Opus 774 ~256 kbps or AAC 141 256 kbps), excluding upsampled Fake HQ files.
+ * @param {string | undefined} ext
+ * @param {Record<string, any> | null | undefined} qc
+ * @returns {boolean}
+ */
+export function isYoutubePremiumMax(ext, qc) {
+  if (!qc) return false;
+  if (String(qc.spectral_status || '').toUpperCase() === 'FAKE_HQ') return false;
+  const codec = String(qc.codec || '').toLowerCase();
+  const extLow = String(ext || '').toLowerCase();
+  if (qc.quality_tier === 'yt_premium_max') return true;
+  if (qc.is_youtube_premium === true && qc.is_highest_quality === true) return true;
+  const srcFmt = String(qc.source_format_id || '');
+  if (extLow !== '.mp3' && (srcFmt === '141' || srcFmt === '774')) return true;
+  const brNum = qc.bitrate_kbps ? Math.round(parseFloat(qc.bitrate_kbps)) : 0;
+  const isOpus = codec === 'opus' || extLow === '.opus' || extLow === '.webm';
+  const isAac = codec === 'aac' || extLow === '.m4a' || extLow === '.aac';
+  return (isOpus && brNum >= 195) || (isAac && brNum >= 220);
+}
+
+/**
+ * Creates a concise stream quality tier badge (LOSSLESS, YT PREMIUM MAX, HQ, or STD).
  * @param {string | undefined} ext
  * @param {Record<string, any> | null | undefined} qc
  * @returns {HTMLSpanElement | null}
  */
 export function createQualityTierBadge(ext, qc) {
   if (!qc) return null;
+  if (String(qc.spectral_status || '').toUpperCase() === 'FAKE_HQ') return null;
+
   const codec = String(qc.codec || '').toLowerCase();
   const extLow = String(ext || '').toLowerCase();
   const isLossless =
@@ -130,13 +154,44 @@ export function createQualityTierBadge(ext, qc) {
     span.title = 'Audio lossless (tanpa kompresi lossy)';
     return span;
   }
+
+  if (isYoutubePremiumMax(ext, qc)) {
+    const span = document.createElement('span');
+    span.className = 'quality-tier-badge yt-premium-max';
+    span.textContent = '★ YT PREMIUM MAX';
+    const srcFmt = String(qc.source_format_id || '');
+    const brLabel = brNum > 0 ? `${brNum} kbps` : '~256 kbps';
+    span.title = srcFmt === '141' || srcFmt === '774'
+      ? `Terverifikasi Kualitas Tertinggi YouTube Premium (Format ${srcFmt} • ${brLabel})`
+      : `Kualitas Tertinggi YouTube Premium (Opus 774 / AAC 141 • ${brLabel})`;
+    return span;
+  }
+
   if (brNum >= 192) {
     const span = document.createElement('span');
     span.className = 'quality-tier-badge hq';
     span.textContent = `HQ ${brNum}k`;
-    span.title = 'Stream High Quality (>= 192 kbps), setara YT Music Premium / Master';
+    span.title = `Audio High Quality (${brNum} kbps)`;
     return span;
   }
+
+  if (brNum >= 135) {
+    const span = document.createElement('span');
+    span.className = 'quality-tier-badge standard';
+    const prefix = codec === 'opus' || extLow === '.opus' || extLow === '.webm' ? 'PUB' : 'STD';
+    span.textContent = `${prefix} ${brNum}k`;
+    span.title = `Stream Standar / Publik (${brNum} kbps, di bawah tier YouTube Premium 256 kbps)`;
+    return span;
+  }
+
+  if (brNum > 0) {
+    const span = document.createElement('span');
+    span.className = 'quality-tier-badge low';
+    span.textContent = `LOW ${brNum}k`;
+    span.title = `Stream bitrate rendah (${brNum} kbps)`;
+    return span;
+  }
+
   return null;
 }
 

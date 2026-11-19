@@ -231,6 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const playlistInspectSub = $('playlistInspectSub');
   const playlistInspectBadge = $('playlistInspectBadge');
   const playlistInspectCount = $('playlistInspectCount');
+  const playlistInspectTierFlag = $('playlistInspectTierFlag');
+  const playlistInspectSpec = $('playlistInspectSpec');
   const playlistInspectBody = $('playlistInspectBody');
   const playlistInspectSelectedCount = $('playlistInspectSelectedCount');
   const btnInspectAddAll = $('btnInspectAddAll');
@@ -272,6 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const keepOpusToggleWrap = $('keepOpusToggleWrap');
   const advancedPanel = $('advancedPanel');
   const advancedSummary = $('advancedSummary');
+  const opusFormatDesc = $('opusFormatDesc');
   const specText = $('specText');
   const specDot = $('specDot');
 
@@ -293,6 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const activeJobTitle = $('activeJobTitle');
   const jobStatusTag = $('jobStatusTag');
   const jobUrlLabel = $('jobUrlLabel');
+  const activeJobStreamBadges = $('activeJobStreamBadges');
   const progressFill = $('progressFill');
   const progressText = $('progressText');
   const progressBar = $('progressBar');
@@ -324,20 +328,53 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLog(terminalLogs, level, message);
   }
 
-  function getSongSpecInfo() {
+  function isYoutubePremiumSessionActive() {
     const useCookiesChecked = optUseCookies ? optUseCookies.checked : true;
-    const isPremium = useCookiesChecked && latestSystemStatus?.cookies_status === 'premium';
+    return Boolean(useCookiesChecked && latestSystemStatus?.cookies_status === 'premium');
+  }
+
+  function getSongSpecInfo() {
+    const isPremium = isYoutubePremiumSessionActive();
     if (isPremium) {
-      return { text: 'Opus / AAC • 256k Premium', isPremium: true };
+      return { text: '256 kbps • Opus 774 / AAC 141', isPremium: true };
     }
-    return { text: 'Opus 48kHz • 160k', isPremium: false };
+    return { text: '~160 kbps • Opus 48 kHz', isPremium: false };
+  }
+
+  function applyYoutubeQualityFlag(node, isPremium = isYoutubePremiumSessionActive()) {
+    if (!node) return;
+    if (isPremium) {
+      node.className = 'ing-kind yt-premium-max';
+      node.textContent = '★ YT PREMIUM MAX';
+      node.title = 'Kualitas Tertinggi YouTube Premium: Opus 774 (48 kHz) / AAC 141 (44.1 kHz) • 256 kbps';
+    } else {
+      node.className = 'ing-kind hq-master';
+      node.textContent = '✨ HQ Audio';
+      node.title = 'Audio Publik YouTube Music (~160 kbps Opus 251). Masuk YouTube Premium untuk 256 kbps.';
+    }
+  }
+
+  function createSongSpecNode() {
+    const spec = getSongSpecInfo();
+    const specNode = el('span', 'ing-result-spec mono-stat' + (spec.isPremium ? ' premium' : ''), spec.text);
+    specNode.dataset.songSpec = '1';
+    specNode.title = spec.isPremium
+      ? 'Bitrate Tertinggi YouTube Premium: 256 kbps (Opus 774 / AAC 141)'
+      : 'Bitrate Publik YouTube: ~160 kbps Opus 251 (128 kbps AAC 140)';
+    return specNode;
   }
 
   function syncSongSpecBadges() {
     const spec = getSongSpecInfo();
     document.querySelectorAll('.ing-result-spec[data-song-spec="1"]').forEach((node) => {
       node.textContent = spec.text;
-      node.className = 'ing-result-spec mono-stat' + (spec.isPremium ? ' premium' : '');
+      node.classList.toggle('premium', spec.isPremium);
+      node.title = spec.isPremium
+        ? 'Bitrate Tertinggi YouTube Premium: 256 kbps (Opus 774 / AAC 141)'
+        : 'Bitrate Publik YouTube: ~160 kbps Opus 251 (128 kbps AAC 140)';
+    });
+    document.querySelectorAll('[data-yt-premium-flag="1"]').forEach((node) => {
+      applyYoutubeQualityFlag(node, spec.isPremium);
     });
   }
 
@@ -365,6 +402,9 @@ document.addEventListener('DOMContentLoaded', () => {
       cookiesModalStatusText.textContent = `${data.cookies_label || 'Status'}: ${data.cookies_note}`;
     }
     syncSongSpecBadges();
+    if (typeof updateSettingsUI === 'function') {
+      updateSettingsUI();
+    }
   }
 
   /* ---------------- System header ---------------- */
@@ -494,11 +534,14 @@ document.addEventListener('DOMContentLoaded', () => {
       info.appendChild(el('div', 'ing-stage-title', item.title || desc.label));
       const meta = el('div', 'ing-stage-meta');
       if (item.kind === 'song') {
-        const badge = el('span', 'ing-kind hq-master', '✨ HQ Audio');
-        badge.title = 'Katalog Master Studio Resmi (Native Opus 48kHz / AAC)';
+        const badge = el('span', 'ing-kind');
+        badge.dataset.ytPremiumFlag = '1';
+        applyYoutubeQualityFlag(badge);
         meta.appendChild(badge);
+        meta.appendChild(createSongSpecNode());
       } else if (item.kind === 'video') {
         meta.appendChild(el('span', 'ing-kind video', '🎬 Video Audio'));
+        meta.appendChild(createSongSpecNode());
       } else {
         meta.appendChild(el('span', `ing-kind ${item.kind}`, KIND_LABEL[item.kind] || 'Video'));
       }
@@ -952,6 +995,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (playlistInspectCount) {
       playlistInspectCount.textContent = item.track_count || 'Memuat...';
     }
+    if (playlistInspectTierFlag) {
+      playlistInspectTierFlag.dataset.ytPremiumFlag = '1';
+      applyYoutubeQualityFlag(playlistInspectTierFlag);
+      playlistInspectTierFlag.classList.remove('hidden');
+    }
+    if (playlistInspectSpec) {
+      const spec = getSongSpecInfo();
+      playlistInspectSpec.textContent = spec.text;
+      playlistInspectSpec.classList.remove('hidden');
+      playlistInspectSpec.classList.toggle('premium', spec.isPremium);
+    }
     if (playlistInspectSelectedCount) {
       playlistInspectSelectedCount.textContent = 'Memeriksa antrean...';
     }
@@ -1044,9 +1098,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const titleRow = el('div', 'playlist-track-title-row');
       titleRow.appendChild(el('span', 'playlist-track-title', track.title || track.url));
 
-      if (track.audio_tier === 'hq' || track.album) {
-        const hqBadge = el('span', 'ing-kind hq-master', '✨ HQ Audio');
-        hqBadge.title = 'Katalog Master Studio Resmi (Native Opus 48kHz / AAC)';
+      if (track.audio_tier === 'hq' || track.album || (track.kind || track.type) !== 'video') {
+        const hqBadge = el('span', 'ing-kind');
+        hqBadge.dataset.ytPremiumFlag = '1';
+        applyYoutubeQualityFlag(hqBadge);
         titleRow.appendChild(hqBadge);
       }
       info.appendChild(titleRow);
@@ -1055,6 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const sub = formatItemSubtitle(track);
       if (sub) metaRow.appendChild(el('span', 'playlist-track-artist', sub));
       if (track.duration) metaRow.appendChild(el('span', 'playlist-track-dur mono-stat', track.duration));
+      metaRow.appendChild(createSongSpecNode());
       info.appendChild(metaRow);
       row.appendChild(info);
 
@@ -1179,8 +1235,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item.kind === 'song' || item.type === 'song') {
         const isHq = item.audio_tier === 'hq' || Boolean(item.album) || !(item.kind || '').includes('video');
         if (isHq) {
-          const badge = el('span', 'ing-kind hq-master', '✨ HQ Audio');
-          badge.title = 'Katalog Master Studio Resmi (Native Opus 48kHz / AAC)';
+          const badge = el('span', 'ing-kind');
+          badge.dataset.ytPremiumFlag = '1';
+          applyYoutubeQualityFlag(badge);
           titleRow.appendChild(badge);
         } else {
           const badge = el('span', 'ing-kind song', 'Lagu');
@@ -1211,12 +1268,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Stream spec pill in meta row
       if (item.kind === 'song' || item.type === 'song') {
-        const spec = getSongSpecInfo();
-        const specNode = el('span', 'ing-result-spec mono-stat' + (spec.isPremium ? ' premium' : ''), spec.text);
-        specNode.dataset.songSpec = '1';
-        metaRow.appendChild(specNode);
+        metaRow.appendChild(createSongSpecNode());
       } else if (item.kind === 'video' || item.type === 'video') {
-        metaRow.appendChild(el('span', 'ing-result-spec video mono-stat', 'Video Audio'));
+        metaRow.appendChild(el('span', 'ing-result-spec video mono-stat', '~128–160 kbps • Video Audio'));
       } else if (isCollection) {
         const btnInspectPill = el('button', 'ing-result-inspect-pill', '📋 Lihat Lagu');
         btnInspectPill.type = 'button';
@@ -1421,32 +1475,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function formatShortLabel() {
     const fmt = effectiveFormat();
-    if (fmt === 'native') return 'Stream asli';
-    if (fmt === 'mp3_320k') return 'MP3 320';
-    if (fmt === 'mp3_vbr0') return 'MP3 V0';
-    return 'Opus 48 kHz';
+    const isPrem = isYoutubePremiumSessionActive();
+    if (fmt === 'native') return isPrem ? 'Stream asli (256 kbps ★ YT Premium)' : 'Stream asli (~160 kbps)';
+    if (fmt === 'mp3_320k') return 'MP3 320 kbps';
+    if (fmt === 'mp3_vbr0') return 'MP3 V0 (~245 kbps)';
+    return isPrem ? 'Opus 48 kHz (~256 kbps ★ YT Premium)' : 'Opus 48 kHz (~160 kbps)';
   }
 
   function updateSettingsUI() {
     const fmt = selectedFormat();
     const isOpus = fmt === 'opus';
+    const isPrem = isYoutubePremiumSessionActive();
     setSwitchEnabled(rawWebmToggleWrap, optRawWebm, isOpus, 'Hanya untuk format Opus');
     setSwitchEnabled(keepOpusToggleWrap, optKeepOpus, !isOpus, 'Hanya untuk format MP3');
+
+    if (opusFormatDesc) {
+      opusFormatDesc.textContent = isPrem
+        ? '48 kHz · ~256 kbps ★ YT Premium'
+        : '48 kHz · ~160 kbps Publik';
+    }
 
     const keep = !isOpus && optKeepOpus.checked;
     let text;
     let color;
     if (isOpus && optRawWebm.checked) {
-      text = 'Stream asli YouTube (.webm / .m4a) · tanpa remux';
-      color = 'var(--accent-cyan)';
+      text = isPrem
+        ? 'Stream asli YT Premium (AAC 141 / Opus 774 · 256 kbps) · ★ Highest Quality · tanpa remux'
+        : 'Stream asli YouTube (.webm ~160 kbps / .m4a 128 kbps) · tanpa remux';
+      color = isPrem ? '#fcd34d' : 'var(--accent-cyan)';
     } else if (isOpus) {
-      text = 'Opus 48 kHz (.opus) · lossless remux · cover art HD · tag asli';
-      color = 'var(--accent-emerald)';
+      text = isPrem
+        ? 'Opus 48 kHz (.opus) · ~256 kbps ★ YT Premium Highest Quality · lossless remux · cover art HD'
+        : 'Opus 48 kHz (.opus) · ~160 kbps (Publik) · lossless remux · cover art HD · tag asli';
+      color = isPrem ? '#fcd34d' : 'var(--accent-emerald)';
     } else if (fmt === 'mp3_320k') {
-      text = 'MP3 320 kbps CBR · konversi lossy' + (keep ? ' · + master Opus' : '');
+      const srcNote = isPrem ? ' · sumber ~256 kbps ★ YT Premium' : ' · sumber ~160 kbps';
+      text = 'MP3 320 kbps CBR · konversi lossy' + srcNote + (keep ? ' · + master Opus' : '');
       color = 'var(--accent-amber)';
     } else {
-      text = 'MP3 VBR V0 · konversi lossy' + (keep ? ' · + master Opus' : '');
+      const srcNote = isPrem ? ' · sumber ~256 kbps ★ YT Premium' : ' · sumber ~160 kbps';
+      text = 'MP3 VBR V0 (~245 kbps) · konversi lossy' + srcNote + (keep ? ' · + master Opus' : '');
       color = 'var(--accent-purple)';
     }
     specText.textContent = text;
@@ -1624,8 +1692,39 @@ document.addEventListener('DOMContentLoaded', () => {
     return { cls: 'success', icon: '✓', label: 'Selesai' };
   }
 
+  function appendTaskStreamBadges(container, task) {
+    if (!container) return false;
+    container.replaceChildren();
+    const s = task && task.stream_info;
+    if (!s || typeof s !== 'object') return false;
+    let added = false;
+    if (s.is_highest_quality && s.is_youtube_premium) {
+      const flag = el('span', 'ing-kind yt-premium-max', '★ YT PREMIUM MAX');
+      flag.title = s.format_id
+        ? `Kualitas Tertinggi YouTube Premium (Format ${s.format_id})`
+        : 'Kualitas Tertinggi YouTube Premium';
+      container.appendChild(flag);
+      added = true;
+    }
+    if (s.bitrate_kbps) {
+      const brLabel = `${Math.round(Number(s.bitrate_kbps))} kbps` + (s.codec ? ` • ${String(s.codec).toUpperCase()}` : '');
+      const brBadge = el(
+        'span',
+        'ing-result-spec mono-stat' + (s.is_youtube_premium ? ' premium' : ''),
+        brLabel
+      );
+      container.appendChild(brBadge);
+      added = true;
+    }
+    return added;
+  }
+
   function renderActive(current, lastFinished) {
     activeJobArt.replaceChildren();
+    if (activeJobStreamBadges) {
+      activeJobStreamBadges.replaceChildren();
+      activeJobStreamBadges.classList.add('hidden');
+    }
     if (current) {
       const d = taskDisplay(current);
       const p = Math.max(0, Math.min(100, Math.round(current.progress || 0)));
@@ -1637,6 +1736,9 @@ document.addEventListener('DOMContentLoaded', () => {
       activeJobTitle.textContent = d.title;
       jobUrlLabel.textContent = [d.typeLabel, d.sub, current.url].filter(Boolean).join(' · ');
       jobUrlLabel.title = current.url || '';
+      if (activeJobStreamBadges && appendTaskStreamBadges(activeJobStreamBadges, current)) {
+        activeJobStreamBadges.classList.remove('hidden');
+      }
       progressFill.style.width = p + '%';
       progressText.textContent = p + '%';
       progressBar.setAttribute('aria-valuenow', String(p));
@@ -1653,6 +1755,9 @@ document.addEventListener('DOMContentLoaded', () => {
       activeJobTitle.textContent = d.title;
       jobUrlLabel.textContent = lastFinished.summary || lastFinished.error || 'Tugas selesai diproses.';
       jobUrlLabel.title = jobUrlLabel.textContent;
+      if (activeJobStreamBadges && appendTaskStreamBadges(activeJobStreamBadges, lastFinished)) {
+        activeJobStreamBadges.classList.remove('hidden');
+      }
       progressFill.style.width = '100%';
       progressText.textContent = formatAgo(lastFinished.finished_at);
     } else {
@@ -1698,6 +1803,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const info = el('div', 'ing-qitem-info');
       info.appendChild(el('div', 'ing-qitem-title', d.title));
       info.appendChild(el('div', 'ing-qitem-sub', task.summary || task.error || o.label));
+      const badgeRow = el('div', 'ing-qitem-badges');
+      if (appendTaskStreamBadges(badgeRow, task)) {
+        info.appendChild(badgeRow);
+      }
       info.title = [task.summary, task.error, task.url].filter(Boolean).join('\n');
       li.appendChild(info);
       li.appendChild(el('span', 'ing-qitem-time', formatAgo(task.finished_at)));
@@ -1716,7 +1825,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Skip list re-render when nothing changed (avoids thumbnail flicker every poll).
     const sig = JSON.stringify([
       queue.map(t => t.id),
-      history.map(t => [t.id, t.outcome]),
+      history.map(t => [t.id, t.outcome, t.stream_info?.bitrate_kbps, t.stream_info?.is_youtube_premium]),
       Math.floor(Date.now() / 60000), // refresh relative times once per minute
     ]);
     if (sig !== lastMonitorSignature) {

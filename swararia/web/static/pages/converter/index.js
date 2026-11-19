@@ -20,6 +20,7 @@ import {
   openDeleteModal,
   openBatchRenameModal,
   createSpectralBadge,
+  createQualityTierBadge,
   openFolderInExplorer,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
@@ -102,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectedPaths = new Set(Array.isArray(sharedInit.selectedPaths) ? sharedInit.selectedPaths : []);
   let visibleFiles = [];
   let lastClickedIndex = null;
+  let lastAutoProbedSignature = '';
   const probedFolders = new Set();
   let currentSourceDir = sharedInit.sourceDir || '';
   let defaultInboxDir = '';
@@ -307,6 +309,24 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFiltersAndRenderTable();
     updateSelectionUI();
     persistWorkspaceState();
+
+    const needsBitrateProbe = allFiles.some(f => !f.qc || !f.qc.codec || !f.qc.bitrate_kbps);
+    const probeSig = `${currentSourceDir}|${allFiles.length}`;
+    if (needsBitrateProbe && probeSig !== lastAutoProbedSignature) {
+      lastAutoProbedSignature = probeSig;
+      const probeDir = currentSourceDir;
+      apiPost('/api/probe', { source_dir: probeDir, probe_spectral: false }).then((probeRes) => {
+        if (!probeRes.ok || !Array.isArray(probeRes.data?.files)) return;
+        if (probeDir !== currentSourceDir) return;
+        allFiles = probeRes.data.files;
+        if (Array.isArray(probeRes.data.playlists)) {
+          allPlaylists = probeRes.data.playlists;
+        }
+        renderPlaylists();
+        applyFiltersAndRenderTable();
+        updateSelectionUI();
+      });
+    }
     return true;
   }
 
@@ -864,6 +884,10 @@ document.addEventListener('DOMContentLoaded', () => {
           tdSize.appendChild(sizeSpan);
         } else {
           tdSize.textContent = `${f.size_mb} MB`;
+        }
+        const tierBadge = createQualityTierBadge(f.ext, qc);
+        if (tierBadge) {
+          tdSize.appendChild(tierBadge);
         }
         tr.appendChild(tdSize);
 
