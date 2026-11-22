@@ -409,3 +409,18 @@ def test_main_sign_target_invokes_sign_binary_from_env(tmp_path: Path):
         assert builder.main() == 0
 
     assert seen == [["custom-signer", str(target.resolve())]]
+
+
+def test_build_desktop_console_prints_are_cp1252_safe():
+    """Guards against Windows CI cp1252 UnicodeEncodeError in build_desktop.py prints."""
+    import ast
+
+    source = BUILDER_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    # Must encode cleanly on legacy Windows console encodings (cp1252 and cp437).
+                    sub.value.encode("cp1252")
+                    sub.value.encode("cp437")

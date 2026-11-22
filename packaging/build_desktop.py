@@ -576,7 +576,7 @@ def compile_inno_setup_installer(signing_config: SigningConfig | None = None) ->
         if setup_exe.is_file():
             digest_info = write_sha256_manifest(setup_exe)
         print("\n" + "=" * 68)
-        print("  🎉 INSTALLER WIZARD BERHASIL DIBUAT!")
+        print("  [OK] INSTALLER WIZARD BERHASIL DIBUAT!")
         print("=" * 68)
         print(f"  File Installer : {setup_exe}")
         if digest_info is not None:
@@ -596,7 +596,18 @@ def compile_inno_setup_installer(signing_config: SigningConfig | None = None) ->
         return False
 
 
+def _configure_console_encoding() -> None:
+    """Prevents UnicodeEncodeError on Windows cp1252/cp437 redirected console streams."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main() -> int:
+    _configure_console_encoding()
     parser = argparse.ArgumentParser(description="Build standalone Swararia Audio Lab desktop app.")
     parser.add_argument(
         "--install-deps",
@@ -682,7 +693,7 @@ def main() -> int:
         return 0 if sign_binary(Path(args.sign_target).resolve(), signing_config) else 1
 
     print("=" * 68)
-    print("  SWARARIA AUDIO LAB — STANDALONE DESKTOP APP BUILDER")
+    print("  SWARARIA AUDIO LAB - STANDALONE DESKTOP APP BUILDER")
     print("=" * 68)
 
     if args.clean:
@@ -729,7 +740,7 @@ def main() -> int:
             return 1
 
     print("\n" + "=" * 68)
-    print("  ✅ BUILD DESKTOP APP SELESAI!")
+    print("  [OK] BUILD DESKTOP APP SELESAI!")
     print("=" * 68)
     print(f"  Folder Distribusi : {DIST_DIR}")
     print(f"  File Executable   : {exe_path}")
