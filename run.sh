@@ -88,11 +88,11 @@ if [[ "${1:-}" == "--web" ]]; then
     echo "  🚀 Menjalankan Web Server di http://127.0.0.1:8765"
     echo "  Tekan Ctrl+C untuk menghentikan server."
     echo "=================================================================="
-    exec python web_ui.py
+    exec python -m swararia
 else
     echo "=================================================================="
     echo "  🚀 Meluncurkan SWARARIA AUDIO LAB Desktop App"
     echo "  Tutup jendela aplikasi (atau tekan Ctrl+C) untuk keluar."
     echo "=================================================================="
-    exec python desktop_app.py
+    exec python -m swararia.desktop
 fi

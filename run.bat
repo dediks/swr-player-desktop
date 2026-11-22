@@ -88,7 +88,7 @@ echo   SWARARIA AUDIO LAB Desktop App sedang berjalan.
 echo   Tutup jendela aplikasi (atau tekan Ctrl+C) untuk keluar.
 echo ==================================================================
 
-python desktop_app.py
+python -m swararia.desktop
 
 if %ERRORLEVEL% neq 0 (
     echo.

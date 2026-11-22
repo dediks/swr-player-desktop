@@ -57,6 +57,7 @@ downloaded_ids.txt
 *.cookies
 cookies.txt
 library/cookies.txt*
+library/ytm_browser_profile/
 *:Zone.Identifier
 
 # Operating System files
@@ -71,6 +72,11 @@ Desktop.ini
 *.swo
 *~
 .vendor/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+node_modules/
 
 # Rename undo history (runtime state)
 library/rename_history.json

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swararia-audio-lab"
+version = "1.0.0"  # keep in sync with APP_VERSION in swararia/server/state.py
+description = "Pro audio library, FOH QC and DSP workstation (local web/desktop app)."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[project.scripts]
+swararia = "swararia.server.app:main"
+swararia-desktop = "swararia.desktop.app:main"
+swararia-audio = "swararia.core.audio_manager.cli:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["swararia*"]
+
+[tool.setuptools.package-data]
+swararia = ["web/static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+extend-exclude = [".vendor", "build", "dist"]
+
+[tool.ruff.lint]
+# Start strict-but-safe: pyflakes only (undefined names, unused imports/variables).
+select = ["F"]
+ignore = ["F401"]  # package __init__ re-exports and annotation-only imports are intentional

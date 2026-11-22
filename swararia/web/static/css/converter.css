@@ -1,0 +1,541 @@
+/* ==========================================================================
+   SWARARIA AUDIO LAB // COMPACT SHADCN-STYLE CONVERTER & MODAL STYLES
+   ========================================================================== */
+
+/* Compact Settings Stack & Split Row */
+.compact-settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.field-group.compact-field {
+  margin-bottom: 0;
+}
+
+.field-group.compact-field .field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.settings-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 0.7rem;
+}
+
+@media (max-width: 780px) {
+  .settings-split-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Shadcn Compact Radio Option Cards (.seg-grid / .seg-option) */
+.seg-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.seg-grid.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.seg-grid.three-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 680px) {
+  .seg-grid.two-cols,
+  .seg-grid.three-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.seg-option {
+  position: relative;
+  cursor: pointer;
+  display: block;
+  user-select: none;
+}
+
+.seg-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  padding: 0.44rem 0.6rem;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  height: 100%;
+}
+
+.seg-option:hover .seg-option-body {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-elevated);
+}
+
+.seg-option input:checked + .seg-option-body {
+  border-color: var(--accent-cyan);
+  background: var(--bg-surface-elevated);
+  box-shadow: inset 2px 0 0 var(--accent-cyan);
+}
+
+.seg-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.seg-option-title {
+  font-size: 0.79rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seg-option-desc {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* Desktop Segmented Tab Group (.seg-pills / .seg-pill) */
+.seg-pills {
+  display: grid;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.seg-pills.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.seg-pills.three-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.seg-pills.four-cols {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .seg-pills.three-cols,
+  .seg-pills.four-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.seg-pill {
+  position: relative;
+  cursor: pointer;
+  display: block;
+  user-select: none;
+}
+
+.seg-pill input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg-pill-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  padding: 0.32rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: all 0.12s ease;
+}
+
+.seg-pill-inner strong {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.seg-pill-inner small {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.seg-pill:hover .seg-pill-inner {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.seg-pill input:checked + .seg-pill-inner {
+  background: var(--bg-surface-elevated);
+  border-color: var(--accent-cyan);
+}
+
+.seg-pill input:checked + .seg-pill-inner strong {
+  color: #ffffff;
+}
+
+.seg-pill input:checked + .seg-pill-inner small {
+  color: var(--accent-cyan);
+}
+
+/* Compact 2-Column Options Switch Grid (Index Page) */
+.options-row.compact-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.65rem;
+  margin-bottom: 0;
+}
+
+@media (max-width: 680px) {
+  .options-row.compact-options-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compact-options-grid .custom-toggle {
+  padding: 0.42rem 0.65rem;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  gap: 0.55rem;
+  transition: border-color 0.14s ease;
+}
+
+.compact-options-grid .custom-toggle:hover {
+  border-color: var(--border-strong);
+}
+
+.compact-options-grid .toggle-text {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.compact-options-grid .toggle-hint {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.action-footer.compact-footer {
+  padding-top: 0.65rem;
+  margin-top: 0.1rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Unified Source Location & Compact Playlist Filter Chips */
+.source-playlist-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.5rem;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.source-location-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding-bottom: 0.38rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.source-location-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.source-location-label {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.source-location-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: var(--bg-oled);
+  border: 1px solid var(--border-strong);
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-sm);
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-location-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+/* Compact Desktop Playlist Filter Items */
+.playlist-selector-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.32rem;
+  max-height: 112px;
+  overflow-y: auto;
+}
+
+.playlist-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.24rem 0.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  max-width: 260px;
+}
+
+.playlist-card:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+}
+
+.playlist-card.active {
+  border-color: var(--accent-cyan);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent-cyan);
+}
+
+.playlist-card-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.playlist-card-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 155px;
+}
+
+.playlist-card-badge {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.06rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 245, 155, 0.14);
+  color: var(--accent-emerald);
+  white-space: nowrap;
+}
+
+.playlist-card-sub {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Converter Table Checkboxes & Selection */
+.converter-table tbody tr {
+  cursor: pointer;
+  user-select: none;
+}
+
+.converter-table tbody tr.row-selected {
+  background: rgba(56, 168, 216, 0.16) !important;
+}
+
+.col-check {
+  width: 36px;
+  text-align: center !important;
+}
+
+.col-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.rate-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.38rem;
+  border-radius: var(--radius-sm);
+}
+
+.rate-tag.match {
+  color: #5cd697;
+  background: rgba(46, 184, 114, 0.12);
+  border: 1px solid rgba(46, 184, 114, 0.36);
+}
+
+.rate-tag.diff {
+  color: #e6b85c;
+  background: rgba(217, 155, 38, 0.12);
+  border: 1px solid rgba(217, 155, 38, 0.36);
+}
+
+/* Custom Destination Folder Box */
+.folder-io-box {
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-recessed);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.folder-io-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.folder-path-input {
+  flex: 1;
+  min-width: 180px;
+  font-family: var(--font-mono) !important;
+  font-size: 0.74rem !important;
+}
+
+.btn-sm {
+  padding: 0.34rem 0.65rem !important;
+  font-size: 0.74rem !important;
+}
+
+/* Interactive Folder Browser Modal */
+.modal-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.modal-current-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  background: var(--bg-core);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.modal-current-path {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  word-break: break-all;
+  flex: 1;
+}
+
+.modal-dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0.4rem;
+  background: var(--bg-core);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.modal-dir-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.modal-dir-item:hover {
+  border-color: var(--accent-cyan);
+  background: var(--bg-surface-elevated);
+}
+
+.modal-dir-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-dir-meta {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.modal-dir-empty {
+  text-align: center;
+  padding: 1.4rem 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.modal-newfolder-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.modal-newfolder-bar .toolbar-input {
+  flex: 1;
+}

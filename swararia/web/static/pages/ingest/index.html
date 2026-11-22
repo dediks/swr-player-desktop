@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SWARARIA AUDIO LAB - Stage 1: Batch Audio Ingestion & Stream Extraction">
+  <title>SWARARIA AUDIO LAB // 1. Batch Audio Ingestion</title>
+  <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/player.css">
+  <link rel="stylesheet" href="/static/css/native-remote.css">
+  <link rel="stylesheet" href="/static/css/ingest.css">
+</head>
+<body class="dark-theme" data-page="ingest">
+  <!-- Top Navigation & System Status Bar (Shared Component mounted via ui-shared.js) -->
+  <header class="app-header" id="appHeader" data-page="ingest"></header>
+
+  <main class="app-container">
+    <!-- Notice Banner for Missing Binaries if any -->
+    <div class="system-notice-card hidden" id="systemNoticeCard">
+      <div class="notice-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <div class="notice-content">
+        <h3 id="noticeTitle">Dependency Not Detected</h3>
+        <p id="noticeDesc">Beberapa tool CLI audio belum terpasang di sistem PATH.</p>
+        <div class="code-pill" id="noticeCode">pip install yt-dlp</div>
+      </div>
+    </div>
+
+    <div class="ing-layout">
+      <!-- ================= LEFT: Composer (Find → Stage → Configure → Start) ================= -->
+      <section class="console-card ing-composer" aria-labelledby="ingestionHeading">
+        <div class="ing-composer-head">
+          <div class="panel-title-wrap">
+            <span class="icon-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+            </span>
+            <div>
+              <h2 id="ingestionHeading">Ingest Audio</h2>
+              <p class="panel-sub">Cari lagu atau tempel URL YouTube / YouTube Music, susun daftar, lalu unduh sekaligus.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 1: Tambahkan Lagu atau Tempel URL -->
+        <div class="ing-step">
+          <div class="ing-step-label">
+            <span class="ing-step-num">1</span>
+            <span>Tambahkan Lagu / URL</span>
+            <div class="ing-mode-tabs" role="tablist" aria-label="Metode input lagu">
+              <button type="button" class="ing-mode-tab active" id="tabModeSearch" role="tab" aria-selected="true" aria-controls="searchModeContainer">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span>Cari Musik</span>
+              </button>
+              <button type="button" class="ing-mode-tab" id="tabModeManual" role="tab" aria-selected="false" aria-controls="manualModeContainer">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                <span>Tempel URL Manual</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Mode 1: Search Console -->
+          <div id="searchModeContainer" class="ing-mode-content">
+            <div class="ing-omnibox" id="ingOmnibox">
+              <span class="ing-omnibox-icon" id="omniIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                id="omniInput"
+                class="ing-omnibox-input"
+                placeholder="Ketik judul lagu, musisi, atau playlist..."
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Cari lagu atau tempel URL"
+                aria-describedby="omniHint"
+              >
+              <button type="button" id="btnOmniClear" class="ing-omnibox-clear hidden" title="Hapus teks" aria-label="Hapus teks">&times;</button>
+              <button type="button" id="btnOmniSubmit" class="btn-primary ing-omnibox-submit">
+                <span id="omniSpinner" class="spinner-small hidden"></span>
+                <span id="omniSubmitText">Cari</span>
+              </button>
+            </div>
+
+            <div class="ing-omnibox-meta">
+              <div class="ing-chips" id="searchTypeChips" role="radiogroup" aria-label="Jenis pencarian">
+                <button type="button" class="ing-chip active" data-type="songs" role="radio" aria-checked="true">Lagu</button>
+                <button type="button" class="ing-chip" data-type="playlists" role="radio" aria-checked="false">Playlist</button>
+                <button type="button" class="ing-chip" data-type="albums" role="radio" aria-checked="false">Album</button>
+                <button type="button" class="ing-chip" data-type="all" role="radio" aria-checked="false">Semua</button>
+              </div>
+              <span class="ing-hint" id="omniHint">Tekan Enter untuk mencari &middot; tempel URL juga didukung</span>
+            </div>
+
+            <!-- Search results -->
+            <div id="ytmResultsPanel" class="ing-results hidden" aria-live="polite">
+              <div class="ing-results-head">
+                <span class="ing-results-title" id="resultsTitle">Hasil pencarian</span>
+                <div class="ing-results-actions">
+                  <div class="ing-results-sort-wrap">
+                    <label for="resultsSortSelect" class="ing-sort-label">Urutkan:</label>
+                    <select id="resultsSortSelect" class="ing-sort-select" aria-label="Urutkan hasil pencarian">
+                      <option value="relevance">Relevansi (Default)</option>
+                      <option value="duration_desc">Durasi: Terpanjang</option>
+                      <option value="duration_asc">Durasi: Terpendek</option>
+                      <option value="title_asc">Judul: A &rarr; Z</option>
+                    </select>
+                  </div>
+                  <button type="button" id="btnAddAllResults" class="ing-link-btn">Tambah semua</button>
+                  <button type="button" id="btnCloseResults" class="ing-icon-btn" title="Tutup hasil (Esc)" aria-label="Tutup hasil">&times;</button>
+                </div>
+              </div>
+              <div id="ytmResultsList" class="ing-results-list" role="list"></div>
+              <div class="ing-results-foot hidden" id="resultsFoot">
+                <button type="button" id="btnLoadMoreResults" class="ing-load-more-btn">
+                  <span id="loadMoreSpinner" class="spinner-small hidden"></span>
+                  <span id="loadMoreText">Muat 15 Lagi...</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Floating Mini Preview Player Dock (Native Audio) -->
+            <div id="ingPreviewDock" class="ing-preview-dock hidden" role="region" aria-label="Pemutar Pratinjau Lagu">
+              <div class="ing-preview-bar">
+                <div class="ing-preview-main">
+                  <div class="ing-preview-thumb-wrap">
+                    <img id="ingPreviewThumb" class="ing-preview-thumb" src="" alt="Album Art">
+                    <div id="ingPreviewSpinner" class="spinner-small ing-preview-spinner hidden"></div>
+                  </div>
+                  <div class="ing-preview-info">
+                    <div class="ing-preview-badge">
+                      <span class="ing-preview-dot"></span>
+                      <span id="ingPreviewBadgeText">Pratinjau Audio (Native HQ)</span>
+                    </div>
+                    <div id="ingPreviewTitle" class="ing-preview-title" title="Judul"></div>
+                    <div id="ingPreviewArtist" class="ing-preview-artist"></div>
+                  </div>
+                  <button type="button" id="btnClosePreview" class="ing-icon-btn ing-preview-close-btn" title="Tutup pratinjau (Esc)" aria-label="Tutup pratinjau">&times;</button>
+                </div>
+                <div class="ing-preview-player-row">
+                  <audio id="ingPreviewAudio" controls class="ing-preview-audio-el" preload="auto"></audio>
+                </div>
+                <div class="ing-preview-actions">
+                  <button type="button" id="btnPreviewStage" class="ing-preview-action-btn ing-preview-stage-btn" title="Tambah ke antrean unduhan">+ Antrean</button>
+                  <button type="button" id="btnPreviewDownloadNow" class="ing-preview-action-btn ing-preview-now-btn" title="Unduh sekarang">Unduh</button>
+                  <a id="btnPreviewExternal" href="#" target="_blank" rel="noopener noreferrer" class="ing-icon-btn ing-preview-ext-btn" title="Buka di YouTube Music">↗</a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode 2: Dedicated Manual Batch URL Textarea -->
+          <div id="manualModeContainer" class="ing-mode-content hidden">
+            <div class="ing-manual-box">
+              <div class="ing-manual-head">
+                <span class="ing-hint">Tempel satu atau banyak URL (satu URL per baris):</span>
+                <button type="button" id="btnClearManualUrls" class="ing-link-btn" title="Bersihkan kotak URL">Bersihkan</button>
+              </div>
+              <textarea
+                id="manualUrlInput"
+                class="ing-manual-textarea"
+                rows="3"
+                placeholder="https://www.youtube.com/watch?v=...&#10;https://music.youtube.com/watch?v=...&#10;https://www.youtube.com/playlist?list=..."
+                spellcheck="false"
+                aria-label="Daftar URL Unduhan Manual"
+              ></textarea>
+              <div class="ing-manual-foot">
+                <span class="ing-hint" id="manualCountHint">Video tunggal atau playlist utuh didukung</span>
+                <button type="button" id="btnAddManualUrls" class="btn-primary ing-manual-submit">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>Masukkan ke Daftar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Staging list -->
+        <div class="ing-step">
+          <div class="ing-step-label">
+            <span class="ing-step-num">2</span>Daftar unduhan
+            <span class="ing-count-pill" id="stagingCount">0</span>
+            <button type="button" id="btnClearStaging" class="ing-link-btn ing-push-right hidden">Kosongkan</button>
+          </div>
+          <div class="ing-staging" id="stagingList" role="list" aria-label="Daftar unduhan"></div>
+          <div class="ing-staging-empty" id="stagingEmpty">
+            <div class="ing-empty-icon" aria-hidden="true">♪</div>
+            <p class="ing-empty-title">Belum ada lagu di daftar</p>
+            <p class="ing-empty-sub">Cari di atas, atau tempel URL video / playlist. Bisa tempel banyak URL sekaligus.</p>
+          </div>
+        </div>
+
+        <!-- Step 3: Output settings -->
+        <div class="ing-step">
+          <div class="ing-step-label"><span class="ing-step-num">3</span>Format output</div>
+          <div class="ing-segmented" role="radiogroup" aria-label="Format output">
+            <label class="ing-seg">
+              <input type="radio" name="audioFormat" value="opus" checked>
+              <span class="ing-seg-body">
+                <span class="ing-seg-title">Opus <span class="ing-seg-tag emerald">BEST</span></span>
+                <span class="ing-seg-desc" id="opusFormatDesc">48 kHz &middot; ~160/256 kbps</span>
+              </span>
+            </label>
+            <label class="ing-seg">
+              <input type="radio" name="audioFormat" value="mp3_320k">
+              <span class="ing-seg-body">
+                <span class="ing-seg-title">MP3 320</span>
+                <span class="ing-seg-desc">320 kbps CBR &middot; CDJ / USB</span>
+              </span>
+            </label>
+            <label class="ing-seg">
+              <input type="radio" name="audioFormat" value="mp3_vbr0">
+              <span class="ing-seg-body">
+                <span class="ing-seg-title">MP3 V0</span>
+                <span class="ing-seg-desc">VBR ~245 kbps &middot; efisien</span>
+              </span>
+            </label>
+          </div>
+          <p class="ing-spec" id="specLine">
+            <span class="ing-spec-dot" id="specDot"></span>
+            <span id="specText">Opus 48 kHz (.opus) · cover art HD · tag asli</span>
+          </p>
+
+          <details class="ing-advanced" id="advancedPanel">
+            <summary>
+              <span class="ing-adv-caret" aria-hidden="true"></span>
+              <span class="ing-adv-title">Opsi lanjutan</span>
+              <span class="ing-adv-summary" id="advancedSummary"></span>
+            </summary>
+            <div class="ing-adv-grid">
+              <label class="ing-switch" id="rawWebmToggleWrap">
+                <input type="checkbox" id="optRawWebm">
+                <span class="ing-switch-track" aria-hidden="true"></span>
+                <span class="ing-switch-text">
+                  <span class="ing-switch-title">Stream mentah (.webm/.m4a)</span>
+                  <span class="ing-switch-hint" data-default-hint="Tanpa remux ke .opus">Tanpa remux ke .opus</span>
+                </span>
+              </label>
+              <label class="ing-switch" id="keepOpusToggleWrap">
+                <input type="checkbox" id="optKeepOpus">
+                <span class="ing-switch-track" aria-hidden="true"></span>
+                <span class="ing-switch-text">
+                  <span class="ing-switch-title">Simpan master Opus</span>
+                  <span class="ing-switch-hint" data-default-hint="File .webm asli ikut disimpan">File .webm asli ikut disimpan</span>
+                </span>
+              </label>
+              <label class="ing-switch">
+                <input type="checkbox" id="optPlaylist" checked>
+                <span class="ing-switch-track" aria-hidden="true"></span>
+                <span class="ing-switch-text">
+                  <span class="ing-switch-title">Subfolder per playlist</span>
+                  <span class="ing-switch-hint">Rapi di folder koleksi default</span>
+                </span>
+              </label>
+              <label class="ing-switch">
+                <input type="checkbox" id="optAutoScan" checked>
+                <span class="ing-switch-track" aria-hidden="true"></span>
+                <span class="ing-switch-text">
+                  <span class="ing-switch-title">Auto QC audit</span>
+                  <span class="ing-switch-hint">True Peak, LUFS &amp; spectrum</span>
+                </span>
+              </label>
+              <label class="ing-switch">
+                <input type="checkbox" id="optUseCookies" checked>
+                <span class="ing-switch-track" aria-hidden="true"></span>
+                <span class="ing-switch-text">
+                  <span class="ing-switch-title">Gunakan cookies sesi</span>
+                  <span class="ing-switch-hint" id="cookiesStatusHint">library/cookies.txt</span>
+                </span>
+              </label>
+              <div class="ing-cookie-tools" id="ingCookieTools">
+                <div class="ing-cookie-status-line">
+                  <span class="status-indicator" id="ingCookieDot"></span>
+                  <span id="ingCookieStatusText">Memeriksa sesi YouTube...</span>
+                </div>
+                <div class="ing-cookie-btns">
+                  <button type="button" class="ing-mini-btn primary" id="btnBrowserLoginCookies">Login YouTube</button>
+                  <button type="button" class="ing-mini-btn" id="btnVerifyCookies">Cek Sesi</button>
+                  <button type="button" class="ing-mini-btn" id="btnManageCookies">Atur Manual</button>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Sticky action bar -->
+        <div class="ing-actionbar">
+          <div class="ing-actionbar-info">
+            <span class="ing-actionbar-main" id="actionSummaryMain">Daftar masih kosong</span>
+            <span class="ing-actionbar-sub" id="actionSummarySub">Opus 48 kHz</span>
+          </div>
+          <button type="button" id="btnStartIngest" class="btn-primary ing-start-btn" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span id="btnStartText">Mulai Unduh</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= RIGHT: Queue Monitor ================= -->
+      <section class="console-card ing-monitor" aria-labelledby="monitorHeading">
+        <div class="ing-monitor-head">
+          <div class="panel-title-wrap">
+            <span class="icon-chip accent-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </span>
+            <div>
+              <h2 id="monitorHeading">Antrean</h2>
+              <p class="panel-sub">Progres unduhan real-time</p>
+            </div>
+          </div>
+          <div class="ing-stat-row">
+            <span class="ing-stat" title="Sedang diproses"><span class="ing-stat-dot cyan"></span><span id="statActive">0</span> aktif</span>
+            <span class="ing-stat" title="Menunggu giliran"><span class="ing-stat-dot amber"></span><span id="queueCounter">0</span> menunggu</span>
+          </div>
+        </div>
+
+        <!-- Active job -->
+        <div class="ing-now" id="activeJobBox" data-state="idle">
+          <div class="ing-now-art" id="activeJobArt" aria-hidden="true">♪</div>
+          <div class="ing-now-body">
+            <div class="ing-now-top">
+              <span class="ing-status" id="jobStatusTag">IDLE</span>
+              <span class="ing-now-pct mono-stat" id="progressText"></span>
+            </div>
+            <div class="ing-now-title" id="activeJobTitle">Tidak ada unduhan aktif</div>
+            <div class="ing-now-sub" id="jobUrlLabel">Tambahkan lagu di panel kiri untuk memulai.</div>
+            <div class="ing-qitem-badges hidden" id="activeJobStreamBadges"></div>
+            <div class="ing-progress" role="progressbar" aria-labelledby="activeJobTitle" aria-valuemin="0" aria-valuemax="100" id="progressBar">
+              <div class="ing-progress-fill" id="progressFill" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Waiting list -->
+        <div class="ing-section" id="waitingSection">
+          <div class="ing-section-label">Menunggu</div>
+          <ol class="ing-qlist" id="waitingList"></ol>
+          <p class="ing-section-empty" id="waitingEmpty">Tidak ada item menunggu.</p>
+        </div>
+
+        <!-- Recent history -->
+        <div class="ing-section">
+          <div class="ing-section-label">Baru selesai</div>
+          <ol class="ing-qlist" id="historyList"></ol>
+          <p class="ing-section-empty" id="historyEmpty">Belum ada riwayat di sesi server ini.</p>
+        </div>
+
+        <!-- Collapsible log -->
+        <details class="ing-log" id="logPanel">
+          <summary>
+            <span class="ing-adv-caret" aria-hidden="true"></span>
+            <span class="ing-adv-title">Log ekstraksi</span>
+            <span class="term-error-pill hidden" id="termErrorCount">0</span>
+          </summary>
+          <div class="terminal-container ing-terminal">
+            <div class="terminal-bar">
+              <div class="terminal-filters">
+                <button type="button" class="term-tab active" id="btnLogFilterAll">Semua</button>
+                <button type="button" class="term-tab" id="btnLogFilterErrors">Error &amp; peringatan</button>
+              </div>
+              <button type="button" id="btnClearLogs" class="btn-text">Clear</button>
+            </div>
+            <div class="terminal-content" id="terminalLogs">
+              <p class="log-line info">[SYSTEM] Engine initialized in background. Ready for batch jobs.</p>
+            </div>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <!-- Bottom Docked Inbox Summary & Workflow Strip -->
+    <section class="console-card pipeline-hub-card" aria-labelledby="pipelineHubHeading">
+      <div class="pipeline-strip-row">
+        <div class="pipeline-strip-info">
+          <span id="pipelineHubHeading" class="pipeline-strip-title">Koleksi Default</span>
+          <code id="ingestInboxPathBadge" class="source-location-badge">SwarariaAudioLab</code>
+          <span class="selection-counter-pill" id="inboxTotalSongsPill">0 Lagu di Koleksi</span>
+          <span class="selection-counter-pill" id="inboxTotalPlaylistsPill">0 Folder Playlist</span>
+          <button type="button" id="btnOpenInboxExplorer" class="btn-secondary btn-sm" title="Buka folder koleksi default di File Explorer">
+            <span>Buka Folder di Explorer</span>
+          </button>
+        </div>
+
+        <nav class="pipeline-stage-strip" aria-label="Tahap Pipeline Berikutnya">
+          <span class="pipeline-strip-label">Tahap Berikutnya:</span>
+          <a href="/qc" class="pipeline-stage-link">2. QC &amp; Spectral Lab</a>
+          <a href="/converter" class="pipeline-stage-link">3. Converter &amp; Loudness</a>
+          <a href="/organizer" class="pipeline-stage-link">4. Tag &amp; File Organizer</a>
+          <a href="/player" class="pipeline-stage-link">7. FOH Live Player</a>
+        </nav>
+      </div>
+    </section>
+
+    <!-- Modal Inspect Playlist / Album (Lihat Isi Lagu) -->
+    <div class="modal-backdrop hidden" id="playlistInspectModal" role="dialog" aria-modal="true" aria-labelledby="playlistInspectTitle">
+      <div class="modal-card playlist-inspect-card">
+        <div class="modal-header">
+          <div class="playlist-inspect-header-info">
+            <div class="playlist-inspect-tag-row">
+              <span class="ing-kind playlist" id="playlistInspectBadge">≡ Playlist</span>
+              <span class="playlist-inspect-track-count mono-stat" id="playlistInspectCount">0 lagu</span>
+              <span class="ing-kind hidden" id="playlistInspectTierFlag"></span>
+              <span class="ing-result-spec mono-stat hidden" id="playlistInspectSpec" data-song-spec="1"></span>
+            </div>
+            <h3 id="playlistInspectTitle">Daftar Lagu</h3>
+            <span class="playlist-inspect-sub" id="playlistInspectSub"></span>
+          </div>
+          <button type="button" class="btn-icon" id="btnClosePlaylistInspect" aria-label="Tutup">&times;</button>
+        </div>
+
+        <div class="modal-body playlist-inspect-body" id="playlistInspectBody">
+          <!-- Dynamic tracklist content -->
+        </div>
+
+        <div class="modal-footer playlist-inspect-footer">
+          <div class="playlist-inspect-footer-stats">
+            <span id="playlistInspectSelectedCount">0 dari 0 di antrean</span>
+          </div>
+          <div class="playlist-inspect-footer-actions">
+            <button type="button" id="btnInspectAddAll" class="btn-primary">
+              <span>+ Tambah Semua ke Antrean</span>
+            </button>
+            <button type="button" id="btnClosePlaylistInspectBtn" class="btn-secondary">
+              <span>Tutup</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Kelola Sesi Cookies YouTube Music -->
+    <div class="modal-backdrop hidden" id="cookiesModal" role="dialog" aria-modal="true" aria-labelledby="cookiesModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="cookiesModalTitle">Kelola Sesi YouTube Music (cookies.txt)</h3>
+          <button type="button" class="btn-icon" id="btnCloseCookiesModal" aria-label="Tutup">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="ing-login-box">
+            <h4 class="ing-login-box-title">Login Otomatis via Jendela Browser (Tanpa Export cookies.txt)</h4>
+            <p class="ing-cookies-help">
+              Buka jendela login YouTube Music bawaan, masuk dengan akun Google/YouTube Music Premium Anda seperti biasa. Setelah login selesai, sesi <strong>256 kbps (Opus 774 / AAC 141)</strong> akan otomatis tersimpan dan jendela tertutup sendiri.
+            </p>
+            <div class="ing-login-box-actions">
+              <button type="button" id="btnModalBrowserLogin" class="btn-primary">
+                <span>Buka Jendela Login YouTube</span>
+              </button>
+              <button type="button" id="btnModalCancelLogin" class="btn-secondary hidden">
+                <span>Batalkan Login</span>
+              </button>
+              <label class="ing-login-reset-label">
+                <input type="checkbox" id="chkResetLoginProfile">
+                <span>Reset profil (ganti akun Google)</span>
+              </label>
+            </div>
+            <div class="ing-login-status-banner" id="cookiesLoginStatusBanner">Siap untuk login akun YouTube Music.</div>
+          </div>
+
+          <div class="ing-cookies-divider"><span>Atau impor cookies.txt manual</span></div>
+
+          <p class="ing-cookies-help">
+            Alternatif jika login otomatis tidak tersedia: ekspor cookies format Netscape dari <code>music.youtube.com</code>, lalu pilih file atau tempel di bawah.
+          </p>
+          <div class="ing-cookies-file-row">
+            <input type="file" id="cookiesFileInput" accept=".txt,text/plain">
+            <span class="ing-cookie-status-line" id="cookiesModalStatusText">Siap diperbarui.</span>
+          </div>
+          <textarea
+            id="cookiesPasteInput"
+            class="ing-cookies-textarea"
+            spellcheck="false"
+            placeholder="# Netscape HTTP Cookie File&#10;# Tempel isi cookies.txt di sini atau pilih file di atas..."
+          ></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnDeleteCookies" class="btn-secondary">
+            <span>Hapus cookies.txt</span>
+          </button>
+          <button type="button" id="btnSaveCookies" class="btn-primary">
+            <span>Simpan &amp; Verifikasi</span>
+          </button>
+          <button type="button" id="btnCloseCookiesBtn" class="btn-secondary">
+            <span>Tutup</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p>SWARARIA AUDIO LAB &bull; Strictly running on <code>127.0.0.1:8765</code> &bull; Stage 1: Native Audio Ingestion</p>
+  </footer>
+
+  <script type="module" src="/static/pages/ingest/index.js"></script>
+</body>
+</html>

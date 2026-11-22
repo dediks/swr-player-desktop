@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SWARARIA AUDIO LAB - Stage 7: FOH Live Player, Soundcheck RTA & Instant Cue Deck">
+  <title>SWARARIA AUDIO LAB // 7. FOH Live Player &amp; Cue Deck</title>
+  <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/converter.css">
+  <link rel="stylesheet" href="/static/css/player.css">
+  <link rel="stylesheet" href="/static/css/native-remote.css">
+</head>
+<body class="dark-theme" data-page="player">
+  <header class="app-header" id="appHeader" data-page="player"></header>
+
+  <main class="app-container player-page-stack">
+    <!-- FOH Wireless Remote Mode Banner (Active when opened on Smartphone / ?remote=1) -->
+    <div class="remote-mode-banner hidden" id="remoteModeBanner" role="status" aria-live="polite">
+      <div class="remote-banner-top-row">
+        <div class="remote-banner-left">
+          <span class="remote-banner-pill">REMOTE</span>
+          <span class="remote-conn-status" id="remoteConnStatus">Connecting...</span>
+        </div>
+        <div class="remote-banner-actions">
+          <button type="button" id="btnOpenPhoneUpload" class="btn-accent btn-sm hidden" title="Unggah lagu dari HP ke PC">
+            <span>Unggah ke PC</span>
+          </button>
+          <button type="button" id="btnRemotePinPrompt" class="btn-nudge remote-pin-btn" title="Enter 4-Digit PIN">
+            <span id="remotePinBtnText">PIN: ----</span>
+          </button>
+          <button type="button" id="btnExitRemoteSim" class="btn-nudge hidden" title="Exit Remote Mode">
+            <span>Master View</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top FOH Console Grid: Left = Transport & Timecode Deck, Right = RTA Analyzer & DSP Rack -->
+    <div class="player-console-grid">
+      <!-- Left Deck: Master Transport, Unified OLED Display & Cue Mode -->
+      <section class="console-card player-transport-card" aria-labelledby="transportHeading">
+        <div class="panel-header player-card-header">
+          <div class="panel-title-wrap">
+            <span class="icon-chip accent-cyan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </span>
+            <div>
+              <h2 id="transportHeading">FOH Master Transport</h2>
+              <p class="panel-sub">High-precision stage playback control dengan Auto-Stop Cue &amp; Smooth Fade-Out</p>
+            </div>
+          </div>
+          <div class="transport-status-badges">
+            <button type="button" class="btn-remote-trigger" id="btnOpenRemoteModal" title="FOH Wireless Remote">
+              <span class="remote-dot" id="remoteHeaderDot"></span>
+              <span id="remoteHeaderLabel">Remote</span>
+            </button>
+            <button type="button" class="btn-remote-trigger hidden" id="btnOpenAndroidRemoteModal" title="Native Android Remote">Android Remote</button>
+            <button type="button" class="btn-remote-trigger hidden" id="btnOpenPhoneUploadConfig" title="Pengaturan Upload Audio dari HP ke PC">Unggah HP</button>
+            <span class="foh-state-pill standby" id="playerStateBadge">STANDBY</span>
+            <span class="panel-badge" id="activePlayModeBadge">CUE (AUTO-STOP)</span>
+          </div>
+        </div>
+
+        <!-- Unified Studio OLED Display (Track Info + QC Pill + Digital Timecode + Seekbar) -->
+        <div class="foh-deck-screen" id="nowPlayingBox">
+          <div class="now-playing-top">
+            <span class="now-playing-index" id="nowPlayingIndex">--</span>
+            <div class="now-playing-title-wrap">
+              <div class="now-playing-header-line">
+                <h3 class="now-playing-title" id="nowPlayingTitle">Select a track from Setlist or Cue Pad</h3>
+                <div class="now-playing-qc-banner neutral" id="nowPlayingQcBanner">
+                  <span id="nowPlayingQcText">Ready to Cue</span>
+                </div>
+              </div>
+              <div class="now-playing-meta-row" id="nowPlayingMetaRow">
+                <span class="meta-chip">No track loaded</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Digital Timecode Readout (Elapsed + Remaining Countdown + Total) -->
+          <div class="timecode-grid" aria-label="Playback Timecode Readout">
+            <div class="timecode-box">
+              <span class="timecode-label">ELAPSED</span>
+              <div class="timecode-val elapsed" id="timeElapsed">00:00.0</div>
+            </div>
+            <div class="timecode-box countdown-box" id="countdownBox">
+              <span class="timecode-label">REMAINING</span>
+              <div class="timecode-val remaining" id="timeRemaining">-00:00.0</div>
+            </div>
+            <div class="timecode-box">
+              <span class="timecode-label">DURATION</span>
+              <div class="timecode-val duration" id="timeDuration">00:00.0</div>
+            </div>
+          </div>
+
+          <!-- Precision Seekbar & Nudge Strip -->
+          <div class="seekbar-section">
+            <input
+              type="range"
+              id="seekSlider"
+              class="foh-seek-slider"
+              min="0"
+              max="1000"
+              step="1"
+              value="0"
+              aria-label="Track Seekbar"
+              disabled
+            >
+            <div class="seek-nudge-row">
+              <div class="seek-nudge-btns">
+                <button type="button" id="btnCueZero" class="btn-nudge" title="Return to 00:00.0 Cue Point">00:00</button>
+                <button type="button" id="btnSeekBack10" class="btn-nudge" title="Seek Back -10s">-10s</button>
+                <button type="button" id="btnSeekBack5" class="btn-nudge" title="Seek Back -5s">-5s</button>
+                <button type="button" id="btnSeekFwd5" class="btn-nudge" title="Seek Forward +5s">+5s</button>
+                <button type="button" id="btnSeekFwd10" class="btn-nudge" title="Seek Forward +10s">+10s</button>
+              </div>
+              <span class="next-cue-hint" id="nextCueHint">Next: —</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Primary Hardware-Style Transport Buttons -->
+        <div class="foh-transport-controls">
+          <button type="button" id="btnPrevTrack" class="btn-transport" title="Previous Track">
+            <span>|&#9664; Prev</span>
+          </button>
+          <button type="button" id="btnPlayPause" class="btn-transport btn-transport-play" title="Play / Pause [Shortcut: Space]">
+            <span id="btnPlayPauseText">&#9654; PLAY CUE</span>
+          </button>
+          <button type="button" id="btnStopReset" class="btn-transport btn-transport-stop" title="Stop &amp; Reset to 00:00.0 Cue Point [Shortcut: S]">
+            <span>&#9632; STOP</span>
+          </button>
+          <button type="button" id="btnNextTrack" class="btn-transport" title="Next Track">
+            <span>Next &#9654;|</span>
+          </button>
+          <button type="button" id="btnFadeOut3" class="btn-transport btn-transport-fade" title="Smooth 3s Fade-Out to Pause [Shortcut: F]">
+            <span>Fade 3s</span>
+          </button>
+          <button type="button" id="btnFadeOut5" class="btn-transport btn-transport-fade" title="Smooth 5s Fade-Out to Pause">
+            <span>Fade 5s</span>
+          </button>
+        </div>
+
+        <!-- Play Mode Segmented Bar & Keyboard Shortcuts -->
+        <div class="play-mode-strip" role="group" aria-label="Playback Mode">
+          <div class="play-mode-buttons">
+            <button type="button" class="btn-mode active" id="modeBtnCue" data-mode="cue" title="Cue (Auto-Stop): Berhenti otomatis setelah 1 lagu selesai">
+              Cue (Auto-Stop)
+            </button>
+            <button type="button" class="btn-mode" id="modeBtnContinuous" data-mode="continuous" title="Continuous: Putar otomatis berlanjut ke lagu berikutnya">
+              Continuous
+            </button>
+            <button type="button" class="btn-mode" id="modeBtnLoop" data-mode="loop" title="Loop 1 Track: Putar berulang-ulang lagu yang sama">
+              Loop 1 Track
+            </button>
+          </div>
+          <div class="shortcut-hint-row" aria-label="Keyboard Hotkeys">
+            <span><kbd>Space</kbd> Play</span>
+            <span><kbd>S</kbd> Stop</span>
+            <span><kbd>F</kbd> Fade</span>
+            <span><kbd>1-8</kbd> Pad</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Deck: Real-Time RTA Analyzer, Master Faders & Tabbed DSP Rack -->
+      <section class="console-card player-dsp-card" aria-labelledby="dspHeading">
+        <div class="panel-header player-card-header">
+          <div class="panel-title-wrap">
+            <span class="icon-chip accent-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 10v3"></path>
+                <path d="M6 6v11"></path>
+                <path d="M10 3v18"></path>
+                <path d="M14 8v7"></path>
+                <path d="M18 5v13"></path>
+                <path d="M22 10v3"></path>
+              </svg>
+            </span>
+            <div>
+              <h2 id="dspHeading">Real-Time RTA &amp; Master Section</h2>
+              <p class="panel-sub">Real-time Frequency Spectrum, Stereo Output Metering &amp; DSP Rack</p>
+            </div>
+          </div>
+          <div class="meter-header-stats">
+            <span class="mono-stat peak-readout" id="meterPeakText">PEAK: -&#8734; dBFS</span>
+            <button type="button" id="btnResetPeak" class="btn-nudge" title="Reset Peak Hold Readout">Reset</button>
+          </div>
+        </div>
+
+        <!-- RTA Spectrum Canvas + L/R Stereo VU Bars -->
+        <div class="rta-visualizer-wrap">
+          <canvas id="rtaCanvas" width="600" height="140" aria-label="Real-Time Spectrum Analyzer &amp; L/R Meter"></canvas>
+          <div class="rta-freq-scale">
+            <span>31Hz</span>
+            <span>63Hz</span>
+            <span>125Hz</span>
+            <span>250Hz</span>
+            <span>500Hz</span>
+            <span>1kHz</span>
+            <span>2kHz</span>
+            <span>4kHz</span>
+            <span>8kHz</span>
+            <span>16kHz</span>
+            <span>L / R</span>
+          </div>
+        </div>
+
+        <!-- Primary Gain Controls: Master Volume + Digital Preamp Trim -->
+        <div class="gain-controls-grid">
+          <div class="fader-box">
+            <div class="fader-label-row">
+              <label for="volumeSlider">Master Fader</label>
+              <div class="fader-right-meta">
+                <span class="mono-stat fader-val" id="volumeValText">100%</span>
+                <button type="button" id="btnMute" class="btn-nudge">Mute</button>
+              </div>
+            </div>
+            <input type="range" id="volumeSlider" class="foh-fader" min="0" max="100" step="1" value="100">
+          </div>
+
+          <div class="fader-box">
+            <div class="fader-label-row">
+              <label for="preampSlider">Preamp Trim</label>
+              <div class="fader-right-meta">
+                <span class="mono-stat fader-val" id="preampValText">0.0 dB</span>
+                <button type="button" id="btnResetPreamp" class="btn-nudge">0 dB</button>
+              </div>
+            </div>
+            <input type="range" id="preampSlider" class="foh-fader" min="-12" max="6" step="0.5" value="0">
+          </div>
+        </div>
+
+        <!-- Clean Studio Collapsible DSP Rack (3-Band EQ | Phase Matrix | Output & Auto-Trim) -->
+        <div class="dsp-rack-container">
+          <div class="dsp-rack-tabs" role="tablist" aria-label="DSP Rack &amp; Signal Routing">
+            <button type="button" class="dsp-rack-tab active" data-dsp-tab="eq" role="tab" aria-selected="true">
+              <span class="dsp-tab-name">3-Band EQ</span>
+              <span class="dsp-tab-badge" id="eqTabBadge">Flat</span>
+            </button>
+            <button type="button" class="dsp-rack-tab" data-dsp-tab="routing" role="tab" aria-selected="false">
+              <span class="dsp-tab-name">Phase &amp; Matrix</span>
+              <span class="dsp-tab-badge" id="routingStatusLabel">Stereo</span>
+            </button>
+            <button type="button" class="dsp-rack-tab" data-dsp-tab="output" role="tab" aria-selected="false">
+              <span class="dsp-tab-name">Auto-Trim &amp; Output</span>
+              <span class="dsp-tab-badge accent" id="outputTabBadge">Auto -14 LUFS</span>
+            </button>
+            <button type="button" class="dsp-rack-tab" data-dsp-tab="fade" role="tab" aria-selected="false">
+              <span class="dsp-tab-name">Global Fade</span>
+              <span class="dsp-tab-badge" id="fadeTabBadge">Off / Off</span>
+            </button>
+          </div>
+
+          <div class="dsp-rack-body" id="dspRackBody">
+            <!-- Tab Pane 1: 3-Band Tone EQ -->
+            <div class="dsp-rack-pane" id="dspPaneEq" data-dsp-pane="eq">
+              <div class="eq-strip">
+                <div class="eq-knob-group">
+                  <div class="eq-label-row">
+                    <label for="eqLowSlider">LOW 80Hz</label>
+                    <span id="eqLowVal">0 dB</span>
+                  </div>
+                  <input type="range" id="eqLowSlider" class="foh-fader eq-slider" min="-12" max="6" step="0.5" value="0">
+                </div>
+                <div class="eq-knob-group">
+                  <div class="eq-label-row">
+                    <label for="eqMidSlider">MID 1kHz</label>
+                    <span id="eqMidVal">0 dB</span>
+                  </div>
+                  <input type="range" id="eqMidSlider" class="foh-fader eq-slider" min="-12" max="6" step="0.5" value="0">
+                </div>
+                <div class="eq-knob-group">
+                  <div class="eq-label-row">
+                    <label for="eqHighSlider">HIGH 10kHz</label>
+                    <span id="eqHighVal">0 dB</span>
+                  </div>
+                  <input type="range" id="eqHighSlider" class="foh-fader eq-slider" min="-12" max="6" step="0.5" value="0">
+                </div>
+                <button type="button" id="btnResetEq" class="btn-nudge eq-reset-btn" title="Reset 3-Band EQ to Flat (0 dB)">Flat EQ</button>
+              </div>
+            </div>
+
+            <!-- Tab Pane 2: Channel Routing & Phase Matrix -->
+            <div class="dsp-rack-pane hidden" id="dspPaneRouting" data-dsp-pane="routing">
+              <div class="routing-btn-grid">
+                <button type="button" class="btn-route active" data-route="stereo" title="Normal Stereo L/R Output">
+                  Stereo (L/R)
+                </button>
+                <button type="button" class="btn-route" data-route="mono" title="Sum L+R to Mono on both channels (Subwoofer / Mono PA Phase Check)">
+                  Mono Sum (L+R)
+                </button>
+                <button type="button" class="btn-route" data-route="left" title="Solo Left Channel Only">
+                  Left Only
+                </button>
+                <button type="button" class="btn-route" data-route="right" title="Solo Right Channel Only">
+                  Right Only
+                </button>
+                <button type="button" class="btn-route" data-route="invert" title="Invert Right Channel 180° Polarity (Phase Cancellation Check)">
+                  &#216; Phase 180&#176;
+                </button>
+              </div>
+            </div>
+
+            <!-- Tab Pane 3: Auto-Trim Headroom & Audio Output Device -->
+            <div class="dsp-rack-pane hidden" id="dspPaneOutput" data-dsp-pane="output">
+              <div class="autotrim-output-strip">
+                <label class="autotrim-check-wrap" title="Automatically adjust Digital Preamp Trim based on True Peak (dBTP) &amp; Integrated LUFS to prevent clipping">
+                  <input type="checkbox" id="chkAutoTrim" checked>
+                  <span>Auto-Trim Headroom (-14 LUFS / -1.0 dBTP)</span>
+                </label>
+
+                <div class="output-device-row">
+                  <label for="outputDeviceSelect" class="output-device-label">Output:</label>
+                  <select id="outputDeviceSelect" class="toolbar-select output-device-select">
+                    <option value="">Default System Audio</option>
+                  </select>
+                  <button type="button" id="btnRefreshDevices" class="btn-nudge" title="Refresh Audio Output Devices">Refresh</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab Pane 4: Global Playback Fade In & Fade Out -->
+            <div class="dsp-rack-pane hidden" id="dspPaneFade" data-dsp-pane="fade">
+              <div class="fade-settings-grid">
+                <div class="fade-setting-row">
+                  <span class="fade-setting-label">Fade In <small>(Play / Resume)</small></span>
+                  <div class="fade-chip-row" data-fade-kind="in">
+                    <button type="button" class="btn-route active" data-fade-in="0">Off</button>
+                    <button type="button" class="btn-route" data-fade-in="0.3">0.3s</button>
+                    <button type="button" class="btn-route" data-fade-in="0.5">0.5s</button>
+                    <button type="button" class="btn-route" data-fade-in="1">1s</button>
+                    <button type="button" class="btn-route" data-fade-in="2">2s</button>
+                    <button type="button" class="btn-route" data-fade-in="3">3s</button>
+                    <button type="button" class="btn-route" data-fade-in="5">5s</button>
+                  </div>
+                </div>
+                <div class="fade-setting-row">
+                  <span class="fade-setting-label">Fade Out <small>(Pause / Stop / Skip)</small></span>
+                  <div class="fade-chip-row" data-fade-kind="out">
+                    <button type="button" class="btn-route active" data-fade-out="0">Off</button>
+                    <button type="button" class="btn-route" data-fade-out="0.3">0.3s</button>
+                    <button type="button" class="btn-route" data-fade-out="0.5">0.5s</button>
+                    <button type="button" class="btn-route" data-fade-out="1">1s</button>
+                    <button type="button" class="btn-route" data-fade-out="2">2s</button>
+                    <button type="button" class="btn-route" data-fade-out="3">3s</button>
+                    <button type="button" class="btn-route" data-fade-out="5">5s</button>
+                  </div>
+                </div>
+                <div class="fade-setting-note">
+                  Tekan Pause/Stop/Next kedua kali saat fading untuk potong instan. Preview pencarian tetap instan tanpa fade.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Middle Card: Collapsible 8 Instant FOH Cue Pads (Hotkeys 1 - 8) -->
+    <section class="console-card cue-pads-card" id="cuePadsCard" aria-labelledby="cuePadsHeading">
+      <div class="cue-pads-bar">
+        <div class="cue-pads-title-group">
+          <span class="icon-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+          </span>
+          <div class="cue-pads-heading-inline">
+            <h2 id="cuePadsHeading">Instant Cue Pads</h2>
+            <span class="cue-pads-count-badge" id="cuePadsCountBadge">0 / 8 Assigned</span>
+            <span class="cue-pads-hint-text">Klik slot kosong untuk memilih track (atau tarik lagu dari tabel), lalu tekan <kbd>1</kbd>–<kbd>8</kbd> di keyboard untuk Play/Pause instan</span>
+          </div>
+        </div>
+        <div class="library-actions">
+          <button type="button" id="btnAssignCurrentToPad" class="btn-secondary btn-sm" title="Simpan track yang sedang dimuat di Master Transport ke slot kosong berikutnya">
+            <span id="btnAssignCurrentText">+ Assign Active Track</span>
+          </button>
+          <button type="button" id="btnClearAllPads" class="btn-nudge" title="Clear all Cue Pad slots 1–8">
+            <span>Clear All</span>
+          </button>
+          <button type="button" id="btnToggleCuePads" class="btn-nudge" aria-expanded="false" title="Collapse or expand Instant Cue Pads">
+            <span id="btnToggleCuePadsText">Show Pads</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="cue-pads-body collapsed" id="cuePadsBody">
+        <div class="cue-pads-grid" id="cuePadsGrid" aria-label="8 Instant Cue Pads"></div>
+      </div>
+    </section>
+
+    <!-- Bottom Card: Setlist & Library Browser Table -->
+    <section class="console-card library-panel" aria-labelledby="setlistHeading">
+      <div class="panel-header player-card-header">
+        <div class="panel-title-wrap">
+          <span class="icon-chip accent-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+          </span>
+          <div>
+            <h2 id="setlistHeading">FOH Setlist &amp; Audio Library</h2>
+            <p class="panel-sub">Klik Play untuk instant playback, Cue untuk standby di 00:00.0, atau +Pad untuk assign ke Hotkey Pad</p>
+          </div>
+        </div>
+
+        <div class="library-actions">
+          <button type="button" id="btnOpenExplorer" class="btn-secondary" title="Buka folder sumber di File Explorer">
+            <span>Buka Explorer</span>
+          </button>
+          <button type="button" id="btnQuickAuditSetlist" class="btn-accent" title="Scan True Peak (dBTP) &amp; Integrated LUFS across all tracks for accurate Auto-Trim Headroom">
+            <span id="btnQuickAuditText">QC Audit &amp; Auto-Trim</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Unified Source Folder, Playlist Chips & Filter Toolbar -->
+      <div class="setlist-filter-shell">
+        <div class="source-location-row">
+          <div class="source-location-info">
+            <span class="source-location-label">Source Directory:</span>
+            <code id="activeSourceBadge" class="source-location-badge">SwarariaAudioLab (Default)</code>
+            <input type="hidden" id="sourceDirInput">
+            <span class="label-hint" id="playerCountSummary">0 tracks ready</span>
+          </div>
+          <div class="source-location-actions">
+            <button type="button" id="btnBrowseSource" class="btn-chip">Browse Source Folder...</button>
+            <button type="button" id="btnSetDefaultLibrary" class="btn-chip hidden" title="Simpan folder aktif sebagai koleksi default untuk semua mode aplikasi">Jadikan Folder Default</button>
+            <button type="button" id="btnResetInbox" class="btn-chip hidden">Kembali ke Default</button>
+          </div>
+        </div>
+
+        <div class="folder-picker-bar" id="folderPickerBar">
+          <label for="playlistSelectDropdown" class="folder-picker-label" title="Pilih Playlist / Folder">
+            <span class="folder-icon">Folder:</span>
+          </label>
+          <select id="playlistSelectDropdown" class="toolbar-select folder-picker-select" aria-label="Pilih Folder Playlist"></select>
+        </div>
+
+        <div class="playlist-selector-grid" id="playlistGrid" aria-label="Playlist Folders"></div>
+
+        <div class="converter-toolbar player-toolbar">
+          <div class="toolbar-filters">
+            <input
+              type="search"
+              id="searchInput"
+              class="toolbar-input"
+              placeholder="Search track title or playlist folder..."
+              aria-label="Search tracks"
+            >
+            <select id="groupByMode" class="toolbar-select" aria-label="Group Tracks By">
+              <option value="folder">Group: Playlist Folder</option>
+              <option value="type">Group: Audio Codec (.opus/.mp3)</option>
+              <option value="folder_type">Group: Folder + Codec</option>
+              <option value="rate">Group: Sample Rate (Hz)</option>
+            </select>
+            <select id="filterQcStatus" class="toolbar-select" aria-label="Filter QC Status">
+              <option value="ALL">QC Status: All</option>
+              <option value="SAFE">FOH Ready (&le; -1.0 dBTP)</option>
+              <option value="TRIM">Preamp Trim (-1.0 to 0 dBTP)</option>
+              <option value="CLIPPING">Clipping (&gt; 0 dBTP)</option>
+              <option value="YT_PREMIUM">YouTube Premium Max (~256k)</option>
+              <option value="FAKE_HQ">Fake HQ (&lt;16 kHz Cutoff)</option>
+            </select>
+            <select id="filterFormat" class="toolbar-select" aria-label="Filter Audio Format">
+              <option value="ALL">Audio Format: All</option>
+              <option value=".opus">Opus (.opus)</option>
+              <option value=".webm">WebM (.webm)</option>
+              <option value=".mp3">MP3 (.mp3)</option>
+              <option value=".m4a">AAC (.m4a)</option>
+              <option value=".wav">WAV (.wav)</option>
+              <option value=".flac">FLAC (.flac)</option>
+            </select>
+          </div>
+
+          <div class="toolbar-selection-btns">
+            <button type="button" id="btnCollapseAllGroups" class="btn-chip">Collapse Groups</button>
+            <button type="button" id="btnExpandAllGroups" class="btn-chip">Expand Groups</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Setlist DataTable -->
+      <div class="table-responsive">
+        <table class="qc-table converter-table player-table" id="playerTable">
+          <thead>
+            <tr>
+              <th scope="col" class="col-play-actions">FOH Transport</th>
+              <th scope="col">Audio Track</th>
+              <th scope="col">Codec, Bitrate &amp; Sample Rate</th>
+              <th scope="col">Spectrum</th>
+              <th scope="col">True Peak (dBTP)</th>
+              <th scope="col">Loudness (LUFS)</th>
+              <th scope="col">Auto-Trim</th>
+              <th scope="col">FOH Status</th>
+            </tr>
+          </thead>
+          <tbody id="playerTableBody">
+            <tr class="empty-row">
+              <td colspan="8">Loading audio tracks from source directory...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>SWARARIA AUDIO LAB &bull; Strictly running on <code>127.0.0.1:8765</code> &bull; Stage 7: FOH Live Player &amp; Soundcheck Engine</p>
+  </footer>
+
+  <!-- Interactive Folder Browser Modal -->
+  <div class="modal-backdrop hidden" id="folderModal" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="folderModalTitle">Pilih Folder Sumber</h3>
+        <button type="button" id="btnCloseModal" class="btn-text">&#10005; Tutup</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-shortcuts" id="modalShortcuts"></div>
+        <div class="modal-current-bar">
+          <button type="button" id="btnModalUp" class="btn-chip">Naik 1 Level</button>
+          <code class="modal-current-path" id="modalCurrentPath">/</code>
+        </div>
+        <div class="modal-dir-list" id="modalDirList"></div>
+        <div class="modal-newfolder-bar">
+          <input type="text" id="newFolderNameInput" class="toolbar-input" placeholder="Buat subfolder baru di sini (opsional)...">
+          <button type="button" id="btnCreateSubfolder" class="btn-chip">+ Buat Folder</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelModal" class="btn-secondary">Batal</button>
+        <button type="button" id="btnSelectModalDir" class="btn-primary">Pilih Folder Ini</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Cue Pad Track Picker Modal -->
+  <div class="modal-backdrop hidden" id="padPickerModal" role="dialog" aria-modal="true" aria-labelledby="padPickerModalTitle">
+    <div class="modal-card pad-picker-modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="padPickerModalTitle">Pilih Track untuk Cue Pad [1]</h3>
+          <p class="pad-picker-subtitle">Klik salah satu track di bawah untuk langsung dipasang ke tombol pintas ini</p>
+        </div>
+        <button type="button" id="btnClosePadPicker" class="btn-text">&#10005; Tutup</button>
+      </div>
+      <div class="modal-body pad-picker-body">
+        <div class="pad-picker-active-banner hidden" id="padPickerActiveBanner">
+          <div class="pad-picker-active-info">
+            <span class="pad-picker-active-label">Track di Master Deck saat ini:</span>
+            <strong id="padPickerActiveTitle">—</strong>
+          </div>
+          <button type="button" id="btnPickActiveDeckTrack" class="btn-chip accent">Gunakan Track Ini</button>
+        </div>
+        <div class="pad-picker-search-row">
+          <input
+            type="search"
+            id="padPickerSearchInput"
+            class="toolbar-input"
+            placeholder="Cari judul track atau nama folder playlist..."
+            aria-label="Cari track untuk Cue Pad"
+          >
+        </div>
+        <div class="pad-picker-list" id="padPickerList"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelPadPicker" class="btn-secondary">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOH Wireless Mobile Remote Modal -->
+  <div class="modal-backdrop hidden" id="remoteModal" role="dialog" aria-modal="true" aria-labelledby="remoteModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="remoteModalTitle">FOH Wireless Remote</h3>
+        <button type="button" id="btnCloseRemoteModal" class="btn-text" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <!-- Master Deck Pairing Panel (Shown on Laptop/PC) -->
+        <div id="remoteMasterSetupPanel">
+          <div class="remote-status-strip">
+            <div class="remote-status-info">
+              <span class="remote-status-title">Wireless Access</span>
+              <span class="remote-status-sub" id="remoteModalClientCount">0 Connected</span>
+            </div>
+            <label class="autotrim-check-wrap">
+              <input type="checkbox" id="chkRemoteEnabled" checked>
+              <span>Enable</span>
+            </label>
+          </div>
+
+          <!-- WSL2 Port Bridge Strip (Auto-shown on WSL2) -->
+          <div class="remote-wsl-bridge-box hidden" id="remoteWslBridgeBox">
+            <div class="remote-wsl-bridge-top">
+              <div class="remote-wsl-bridge-info">
+                <strong id="remoteWslBridgeTitle">WSL2 Port Bridge</strong>
+                <p id="remoteWslBridgeDesc">Forward Wi-Fi port to WSL2</p>
+              </div>
+              <div class="remote-wsl-bridge-actions">
+                <button type="button" id="btnEnableWslBridge" class="btn-accent btn-sm">
+                  <span id="btnEnableWslBridgeText">Connect</span>
+                </button>
+                <button type="button" id="btnDisableWslBridge" class="btn-nudge hidden" title="Close port bridge">
+                  Disconnect
+                </button>
+                <button type="button" id="btnCopyWslCmd" class="btn-nudge" title="Copy PowerShell Admin command">
+                  Copy Cmd
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="remote-pairing-grid">
+            <div class="remote-qr-card">
+              <div class="remote-qr-frame">
+                <canvas id="remoteQrCanvas" width="144" height="144" aria-label="Remote QR Code"></canvas>
+              </div>
+              <span class="remote-qr-caption" id="remoteQrCaption">Scan QR</span>
+            </div>
+
+            <div class="remote-pairing-right">
+              <div class="remote-pin-card">
+                <div class="remote-pin-info">
+                  <span class="remote-pin-label">PIN</span>
+                  <strong class="remote-pin-code" id="remotePinDisplay">----</strong>
+                </div>
+                <button type="button" id="btnRegenRemotePin" class="btn-nudge" title="Generate new 4-digit PIN">
+                  New PIN
+                </button>
+              </div>
+
+              <div class="remote-url-section">
+                <div class="remote-url-header">
+                  <span class="remote-url-title">Network IP</span>
+                  <button type="button" id="btnRefreshRemoteIps" class="btn-nudge">Refresh</button>
+                </div>
+                <div class="remote-url-list" id="remoteUrlList"></div>
+
+                <div class="remote-manual-ip-row">
+                  <input
+                    type="text"
+                    id="remoteManualIpInput"
+                    class="toolbar-input remote-manual-ip-input"
+                    placeholder="Custom IP (e.g. 192.168.1.20)"
+                    aria-label="Custom IP"
+                  >
+                  <button type="button" id="btnApplyManualIp" class="btn-nudge">Connect</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connected Devices List & Individual Disconnect/Role Control -->
+          <div class="remote-clients-box" id="remoteClientsBox">
+            <div class="remote-clients-header">
+              <span class="remote-url-title">Devices</span>
+              <button type="button" id="btnKickAllRemotes" class="btn-nudge hidden" title="Disconnect all devices">
+                Disconnect All
+              </button>
+            </div>
+            <div class="remote-clients-list" id="remoteClientsList"></div>
+            <div class="remote-blocked-section hidden" id="remoteBlockedSection">
+              <span class="remote-blocked-title">Blocked</span>
+              <div class="remote-blocked-list" id="remoteBlockedList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Client PIN Entry Panel (Shown when opened on Smartphone or Sim Tab) -->
+        <div id="remoteClientPinPanel" class="hidden">
+          <div class="remote-pin-entry-box">
+            <label for="remotePinInput" class="remote-pin-label">Enter 4-Digit PIN</label>
+            <div class="remote-pin-input-row">
+              <input
+                type="text"
+                id="remotePinInput"
+                class="toolbar-input remote-pin-input"
+                maxlength="4"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                placeholder="0000"
+                autocomplete="off"
+              >
+              <button type="button" id="btnSaveRemotePin" class="btn-primary">Connect</button>
+            </div>
+            <p class="remote-pin-feedback" id="remotePinFeedback">4-digit PIN from Master Deck.</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnOpenRemoteSimTab" class="btn-chip accent" title="Open remote simulator in new tab">
+          Open Simulator
+        </button>
+        <button type="button" id="btnCancelRemoteModal" class="btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden HTML5 Audio Element (Routed through Web Audio API Graph) -->
+  <audio id="fohAudioElement" preload="metadata" crossorigin="anonymous"></audio>
+
+  <script type="module" src="/static/pages/player/index.js"></script>
+  <div class="modal-backdrop hidden" id="androidRemoteModal" role="dialog" aria-modal="true" aria-labelledby="androidRemoteModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <div class="native-row"><span id="nativeTitleIcon" class="native-title-icon"></span><h3 id="androidRemoteModalTitle">Android Remote</h3></div>
+        <button type="button" id="btnCloseAndroidRemoteModal" class="btn-text native-icon-button" aria-label="Tutup Android Remote">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="remote-status-strip"><span class="native-row"><span id="nativeStatusDot" class="native-dot"></span><strong id="nativeStatus" role="status">Memeriksa status…</strong></span><span class="native-small">Audio di PC</span></div>
+        <section id="nativeOff" class="native-screen hidden">
+          <div class="native-intro"><div id="nativeHeroIcon" class="native-hero-icon"></div><h4>Kontrol PC dari Android.</h4><p>Play, Pause dan Stop dari HP.<br>Musik tetap keluar dari PC.</p></div>
+          <button type="button" id="nativeStart" class="btn-accent native-main" disabled>Hubungkan Android</button>
+          <div id="nativeNetworkNote" class="native-network-note"><span><strong>Menggunakan WSL / Windows?</strong><br>Akses dari HP lewat Wi-Fi & Firewall perlu diperiksa.</span><button type="button" id="nativeGuide" class="btn-text native-link">Lihat pengaturan</button></div>
+        </section>
+        <section id="nativePairingPanel" class="native-screen hidden">
+          <div class="native-section-title"><h4>Masukkan kode di HP</h4><span id="nativeCountdown" class="native-countdown"></span></div>
+          <div class="remote-pairing-grid native-pair-grid"><div id="nativeQrCard" class="remote-qr-card"><div class="remote-qr-frame"><canvas id="nativeQr" class="hidden" width="180" height="180" aria-label="QR pairing privat"></canvas></div><span class="remote-qr-caption">Kode sekali pakai</span></div><div class="remote-pairing-right native-steps"><ol><li><span>1</span><div>Buka pemindai QR di HP.<small>Salin teks dari QR.</small></div></li><li><span>2</span><div>Buka Swararia Android.<small>Remote → tempel kode → Connect.</small></div></li><li><span>3</span><div>Setujui perangkat di PC.</div></li></ol><button type="button" id="nativeShowCode" class="btn-secondary" aria-controls="nativeManual" aria-expanded="false">Lihat / salin kode manual</button></div></div>
+          <p class="native-help">QR berisi teks, bukan tautan. Gunakan pemindai eksternal; Android 0.5 belum punya scanner.</p>
+          <details id="nativeManual" class="native-manual"><summary>Kode manual</summary><div class="native-detail-body"><textarea id="nativePairing" class="toolbar-input" readonly rows="3" spellcheck="false" autocomplete="off" aria-label="Pairing string privat"></textarea><button type="button" id="nativeCopy" class="btn-secondary" disabled>Salin kode</button></div></details>
+
+        </section>
+        <div id="nativeBridgeBanner" class="native-bridge-banner hidden"><div class="native-bridge-head"><strong id="nativeBridgeBannerTitle">Jembatan Windows / Firewall belum aktif</strong><button type="button" id="nativeBridgeBannerEnable" class="btn-secondary">Aktifkan Bridge &amp; Firewall (Admin)</button></div><p id="nativeBridgeBannerText" class="native-help"></p></div>
+        <p id="nativeInviteStatus" class="native-help hidden"></p>
+        <section id="nativeDeviceSection" class="native-screen hidden"><h4 id="nativeDeviceTitle">Perangkat sesi ini</h4><div id="nativeDevices" class="native-screen"></div><div class="native-connected-note">Menutup panel ini tidak menghentikan musik PC.</div></section>
+        <div id="nativeMediaBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeMediaTransfer"><span><strong>Izinkan Android unduh lagu</strong><small>Hanya perangkat berizin Kontrol penuh yang dapat mengunduh file audio dari katalog sesi ini ke Library HP.</small></span></label></div>
+        <div id="nativeSyncBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeFolderSync"><span><strong>Izinkan sinkronisasi folder &amp; playlist (HTTPS)</strong><small>Perangkat Swararia (PC / Android Kontrol penuh) dapat menarik folder playlist terkompresi (.mp3/.m4a/.opus/.webm maks. 150 MiB). WAV &amp; FLAC sementara dilewati.</small></span></label><div class="native-path-row"><span class="native-path-label">Sumber sync: <code id="nativeSyncSourceLabel">library/inbox</code></span><div class="native-path-actions"><button type="button" id="btnNativeSyncUseSource" class="btn-chip">Folder Aktif</button><button type="button" id="btnNativeSyncResetInbox" class="btn-chip">Inbox</button></div></div></div>
+        <div id="nativeUploadBox" class="native-media-box hidden"><label class="native-media-toggle"><input type="checkbox" id="nativeAndroidUpload"><span><strong>Izinkan Android unggah lagu (HTTPS)</strong><small>Aplikasi Android (Kontrol penuh) dapat mengunggah audio terkompresi (.mp3/.m4a/.opus/.webm maks. 150 MiB) ke folder PC. WAV &amp; FLAC ditolak pada fase ini.</small></span></label><div class="native-path-row"><span class="native-path-label">Tujuan unggah: <code id="nativeUploadDestLabel">library/inbox</code></span><div class="native-path-actions"><button type="button" id="btnNativeUploadUseSource" class="btn-chip">Folder Aktif</button><button type="button" id="btnNativeUploadResetInbox" class="btn-chip">Inbox</button></div></div></div>
+        <div id="nativeInviteActions" class="native-invite-actions hidden"><button type="button" id="nativeInviteClose" class="btn-text native-link hidden" disabled>Tutup kode</button><button type="button" id="nativeInviteOpen" class="btn-secondary native-add hidden" disabled>Buat kode pairing</button></div>
+        <details id="nativeSettings" class="native-details"><summary><span id="nativeSettingsIcon" class="native-title-icon"></span>Setelan koneksi <span class="native-summary-hint">IP, port, detail keamanan</span></summary><div class="native-detail-body">
+          <div class="native-fields"><label>IP LAN PC<input id="nativeBindIp" list="nativeIpList" class="toolbar-input" type="text" placeholder="IP privat pada PC ini" autocomplete="off" spellcheck="false"><datalist id="nativeIpList"></datalist></label><label>Port<input id="nativePort" class="toolbar-input" type="number" min="1" max="65535" value="8766"></label></div>
+          <p id="nativePortHelp" class="native-help">Gunakan IP Wi-Fi/LAN PC yang terhubung dengan HP. Listener aktif belum berarti firewall mengizinkannya.</p>
+          <div id="nativeBridgeBox" class="native-wsl-guide hidden"><strong>Status Jembatan Windows &amp; Firewall</strong><p id="nativeBridgeStatus">Memeriksa jalur Windows → PC → HP…</p><div class="native-bridge-actions"><button type="button" id="nativeBridgeEnable" class="btn-secondary">Aktifkan Bridge &amp; Firewall (Admin)</button><button type="button" id="nativeBridgeCheck" class="btn-text native-link">Cek koneksi</button><button type="button" id="nativeBridgeDisable" class="btn-text native-link hidden">Matikan Bridge</button></div><details class="native-security"><summary>Perintah PowerShell Admin manual</summary><div class="native-detail-body"><code id="nativeBridgeCmd">—</code><button type="button" id="nativeBridgeCopy" class="btn-secondary">Salin perintah PowerShell</button></div></details></div>
+          <details class="native-security"><summary>Detail keamanan</summary><div class="native-detail-body"><p id="nativeConnection">Listener belum aktif.</p><label>Fingerprint SHA-256 · cocokkan di client<code id="nativeFingerprint">—</code></label><p class="native-help">HTTPS ini tidak melindungi HP browser remote HTTP/PIN lama. Kode dan sertifikat berlaku untuk sesi ini; jangan forward port ke internet.</p></div></details>
+          <button type="button" id="nativeRefresh" class="btn-text native-link">Refresh status</button>
+        </div></details>
+        <p id="nativeFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer"><span class="native-footer-note">Musik tetap di PC</span><button type="button" id="nativeStop" class="btn-text native-link hidden" disabled>Nonaktifkan Android Remote</button><button type="button" id="btnCancelAndroidRemoteModal" class="btn-secondary">Tutup</button></div>
+    </div>
+  </div>
+
+  <!-- PC Operator Phone Upload Config Modal -->
+  <div class="modal-backdrop hidden" id="phoneUploadConfigModal" role="dialog" aria-modal="true" aria-labelledby="phoneUploadConfigModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="phoneUploadConfigModalTitle">Upload Audio dari HP ke PC</h3>
+        <button type="button" id="btnClosePhoneUploadConfig" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="native-media-box">
+          <label class="native-media-toggle">
+            <input type="checkbox" id="chkPhoneUploadEnabled">
+            <span>
+              <strong>Izinkan HP mengunggah lagu lewat FOH Remote</strong>
+              <small>HP terhubung (PIN valid &amp; mode Kontrol) dapat mengirim lagu ke folder playlist di PC ini.</small>
+            </span>
+          </label>
+        </div>
+        <div class="transfer-warning-strip">
+          <strong>Catatan Fase Ini:</strong> Hanya file audio terkompresi (.mp3, .m4a, .mp4, .aac, .opus, .ogg, .webm) hingga 150 MiB/file yang diterima. File <strong>.wav &amp; .flac</strong> sementara ditolak/dilewati; duplikat SHA-256 dilewati otomatis.
+        </div>
+        <div class="remote-status-strip">
+          <div class="remote-status-info">
+            <span class="remote-status-title">Tujuan Root di PC</span>
+            <code id="phoneUploadConfigDestLabel" class="source-location-badge">library/inbox</code>
+          </div>
+          <div class="transfer-btn-pair">
+            <button type="button" id="btnPhoneUploadUseActiveSource" class="btn-chip">Pakai Folder Aktif</button>
+            <button type="button" id="btnPhoneUploadResetInbox" class="btn-chip">Reset Inbox</button>
+          </div>
+        </div>
+        <p id="phoneUploadConfigFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPhoneUploadConfig" class="btn-secondary">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Smartphone Browser Audio Upload Modal (?remote=1) -->
+  <div class="modal-backdrop hidden" id="phoneUploadModal" role="dialog" aria-modal="true" aria-labelledby="phoneUploadModalTitle">
+    <div class="modal-card remote-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="phoneUploadModalTitle">Unggah Lagu dari HP ke PC</h3>
+        <button type="button" id="btnClosePhoneUpload" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="remote-status-strip">
+          <span class="remote-status-title">Root Tujuan PC:</span>
+          <code id="phoneUploadDestBadge" class="source-location-badge">library/inbox</code>
+        </div>
+        <div class="transfer-warning-strip">
+          <strong>Peringatan Format:</strong> File <strong>.wav</strong> dan <strong>.flac</strong> belum didukung pada fase ini dan akan dilewati. Gunakan .mp3, .m4a, .aac, .opus, .ogg, atau .webm (maks. 150 MiB/file).
+        </div>
+        <div class="field-group compact-field">
+          <label for="phoneUploadPlaylistSelect" class="field-label">Folder Playlist Tujuan</label>
+          <select id="phoneUploadPlaylistSelect" class="toolbar-select"></select>
+        </div>
+        <div id="phoneUploadCustomSubfolderWrap" class="field-group compact-field hidden">
+          <label for="phoneUploadCustomSubfolder" class="field-label">Nama Folder Playlist Baru</label>
+          <input type="text" id="phoneUploadCustomSubfolder" class="toolbar-input" placeholder="Misal: Opening Wedding / Setlist 2" maxlength="80">
+        </div>
+        <div class="field-group compact-field">
+          <label for="phoneUploadFileInput" class="field-label">Pilih File Audio (maks. 20 file/batch)</label>
+          <input type="file" id="phoneUploadFileInput" class="toolbar-input" multiple accept=".mp3,.m4a,.mp4,.aac,.opus,.ogg,.webm">
+        </div>
+        <div id="phoneUploadWarningBanner" class="transfer-warning-strip is-warn hidden">
+          <span id="phoneUploadWarningText"></span>
+        </div>
+        <div id="phoneUploadFileList" class="transfer-file-list"></div>
+        <div id="phoneUploadProgressWrap" class="transfer-progress-wrap hidden">
+          <div class="transfer-progress-track"><div id="phoneUploadProgressBar" class="transfer-progress-fill"></div></div>
+          <span id="phoneUploadProgressText" class="transfer-progress-label">0%</span>
+        </div>
+        <p id="phoneUploadFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPhoneUpload" class="btn-secondary">Tutup</button>
+        <button type="button" id="btnStartPhoneUpload" class="btn-primary" disabled>Unggah ke PC</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

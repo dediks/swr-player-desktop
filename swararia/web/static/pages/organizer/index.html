@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SWARARIA AUDIO LAB - Stage 4: Batch Auto-Numbering, YouTube Tag Cleaner & File Organizer">
+  <title>SWARARIA AUDIO LAB // 4. Tag &amp; File Organizer</title>
+  <link rel="icon" type="image/jpeg" href="/static/assets/swararia-logo.jpg">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/converter.css">
+  <link rel="stylesheet" href="/static/css/player.css">
+</head>
+<body class="dark-theme" data-page="organizer">
+  <header class="app-header" id="appHeader" data-page="organizer"></header>
+
+  <main class="app-container">
+    <!-- Top Studio Grid: Left = Auto-Numbering & Tag Cleaner Rules, Right = Live Diff Preview -->
+    <div class="dashboard-grid">
+      <!-- Left Panel: Batch Auto-Numbering & Tag Cleaner Studio -->
+      <section class="console-card ingestion-panel" aria-labelledby="tagStudioHeading">
+        <div class="panel-header">
+          <div class="panel-title-wrap">
+            <span class="icon-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+            </span>
+            <div>
+              <h2 id="tagStudioHeading">4. Auto-Numbering &amp; Tag Cleaner</h2>
+              <p class="panel-sub">Number tracks for CDJ/mixer displays &amp; clean YouTube junk tags</p>
+            </div>
+          </div>
+          <span class="panel-badge">FOH Track Sequencer</span>
+        </div>
+
+        <div class="ingest-form compact-settings-stack">
+          <div class="batch-rename-controls-grid">
+            <div class="field-group compact-field">
+              <label for="numberingModeSelect" class="field-label">
+                <span>A. Track Number Format</span>
+              </label>
+              <select id="numberingModeSelect" class="toolbar-select">
+                <option value="2digit_dash">01 - Song Title (2 digits + dash)</option>
+                <option value="3digit_dash">001 - Song Title (3 digits + dash)</option>
+                <option value="2digit_dot">01. Song Title (2 digits + dot)</option>
+                <option value="none">No Numbering (Only Clean Names)</option>
+              </select>
+            </div>
+
+            <div class="field-group compact-field">
+              <label for="startNumberInput" class="field-label">
+                <span>B. Start No.</span>
+              </label>
+              <input type="number" id="startNumberInput" class="toolbar-input" value="1" min="0" max="9999">
+            </div>
+
+            <div class="field-group compact-field">
+              <label for="sortBySelect" class="field-label">
+                <span>Numbering Order</span>
+              </label>
+              <select id="sortBySelect" class="toolbar-select">
+                <option value="selection">Selection order</option>
+                <option value="name">File name (A-Z, natural)</option>
+                <option value="mtime">Date modified (oldest first)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-group compact-field">
+            <div class="field-label">
+              <span>C. Automatic Title Cleaning Rules</span>
+              <span class="label-hint">Applied in order to the selected songs</span>
+            </div>
+            <div class="batch-rename-checks">
+              <label class="batch-rename-check-item">
+                <input type="checkbox" id="chkStripYtId" checked>
+                <span>Remove the YouTube ID at the end of the title (e.g. <code>[dQw4w9WgXcQ]</code>)</span>
+              </label>
+              <label class="batch-rename-check-item">
+                <input type="checkbox" id="chkStripJunkTags" checked>
+                <span>Remove junk tags (<code>Official Video</code>, <code>Lyrics</code>, <code>HD</code>, <code>4K</code>, <code>Visualizer</code>)</span>
+              </label>
+              <label class="batch-rename-check-item">
+                <input type="checkbox" id="chkCleanSpaces" checked>
+                <span>Tidy underscores (<code>_</code>), pipe characters (<code>｜</code>), and double spaces</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field-group compact-field">
+            <div class="field-label">
+              <span>D. Organize into Folders by Tag</span>
+              <span class="label-hint">Moves the selected songs into folders based on their artist/album tags (can be undone)</span>
+            </div>
+            <div class="batch-rename-checks">
+              <select id="organizeTemplateSelect" class="toolbar-select">
+                <option value="artist_album">Artist / Album /</option>
+                <option value="artist">Artist /</option>
+              </select>
+              <button type="button" id="btnOrganizeFolders" class="btn-secondary" disabled>
+                <span id="btnOrganizeFoldersText">Organize into Folders (0 Files)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="action-footer compact-footer">
+            <div class="format-spec-tag">
+              <span class="spec-dot"></span>
+              <span id="studioTargetHint">Check songs in the table below to preview the renames</span>
+            </div>
+            <button type="button" id="btnApplyBatchRename" class="btn-primary" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span id="btnApplyBatchRenameText">Apply Rename (0 Files)</span>
+            </button>
+            <button type="button" id="btnUndoRename" class="btn-secondary" disabled title="Undo the last batch rename">
+              <span id="btnUndoRenameText">Undo Last Rename</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Real-Time Before / After Diff Preview -->
+      <section class="console-card monitor-panel" aria-labelledby="previewHeading">
+        <div class="panel-header">
+          <div class="panel-title-wrap">
+            <span class="icon-chip accent-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </span>
+            <div>
+              <h2 id="previewHeading">Live Rename Preview</h2>
+              <p class="panel-sub">Old vs. new name simulation before anything is applied to disk</p>
+            </div>
+          </div>
+          <span class="queue-counter" id="previewSummaryBadge">0 selected</span>
+        </div>
+
+        <div class="monitor-body">
+          <div class="delete-target-list organizer-live-preview-box" id="organizerPreviewList">
+            <div class="notif-empty">
+              Check songs or playlist folders in the table below to see a live simulation of the file renames.
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bottom Panel: File & Folder Organizer + Grouping by Type + Batch Delete -->
+    <section class="console-card library-panel" aria-labelledby="organizerTableHeading">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <span class="icon-chip accent-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </span>
+          <div>
+            <h2 id="organizerTableHeading">File Management, Type Grouping &amp; Batch Delete</h2>
+            <p class="panel-sub">Group songs by folder or file type (.opus/.webm/.mp3) for bulk rename or delete</p>
+          </div>
+        </div>
+
+        <div class="library-actions">
+          <button type="button" id="btnOpenPcSyncModal" class="btn-accent" title="Sinkronisasi folder playlist dari PC Swararia lain di LAN">
+            <span>Sinkronisasi PC &harr; PC</span>
+          </button>
+          <button type="button" id="btnOpenExplorer" class="btn-secondary" title="Open the source folder in File Explorer">
+            <span>Explorer</span>
+          </button>
+          <button type="button" id="btnSelectNonMp3" class="btn-secondary" title="Select all visible raw .opus / .webm / .m4a files">
+            <span>Select Non-MP3 (.opus/.webm)</span>
+          </button>
+          <button type="button" id="btnDeleteSelected" class="btn-danger" disabled title="Permanently delete all checked files">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span id="btnDeleteSelectedText">Delete Selected (0)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Source Folder Strip + Playlist Filter Chips -->
+      <div class="source-playlist-bar">
+        <div class="source-location-row">
+          <div class="source-location-info">
+            <span class="source-location-label">Source:</span>
+            <code id="activeSourceBadge" class="source-location-badge">SwarariaAudioLab (Default)</code>
+            <input type="hidden" id="sourceDirInput">
+          </div>
+          <div class="source-location-actions">
+            <span class="label-hint">Use the "Group: File Type" dropdown below to separate .opus/.webm from .mp3</span>
+            <button type="button" id="btnBrowseSource" class="btn-chip">Change Source Folder / USB...</button>
+            <button type="button" id="btnSetDefaultLibrary" class="btn-chip hidden" title="Simpan folder aktif sebagai koleksi default untuk semua mode aplikasi">Jadikan Folder Default</button>
+            <button type="button" id="btnResetInbox" class="btn-chip hidden">Kembali ke Default</button>
+          </div>
+        </div>
+
+        <div class="playlist-selector-grid" id="playlistGrid" aria-label="Filter Playlist Folder"></div>
+      </div>
+
+      <!-- Filter & Grouping Toolbar -->
+      <div class="converter-toolbar">
+        <div class="toolbar-filters">
+          <input
+            type="search"
+            id="searchInput"
+            class="toolbar-input"
+            placeholder="Search song title or folder..."
+            aria-label="Search songs"
+          >
+          <select id="groupByMode" class="toolbar-select" aria-label="Group By">
+            <option value="folder">Group: Playlist Folder</option>
+            <option value="type">Group: File Type (.opus/.webm/.mp3)</option>
+            <option value="folder_type">Group: Folder + File Type</option>
+            <option value="rate">Group: Sample Rate</option>
+          </select>
+          <select id="filterFormat" class="toolbar-select" aria-label="Filter Format">
+            <option value="ALL">All Formats</option>
+            <option value=".opus">Opus (.opus)</option>
+            <option value=".webm">WebM (.webm)</option>
+            <option value=".mp3">MP3 (.mp3)</option>
+            <option value=".m4a">AAC (.m4a)</option>
+          </select>
+        </div>
+
+        <div class="toolbar-selection-btns">
+          <span class="selection-counter-pill" id="selectionCounterPill">0 selected</span>
+          <button type="button" id="btnCollapseAllGroups" class="btn-chip">Collapse</button>
+          <button type="button" id="btnExpandAllGroups" class="btn-chip">Expand</button>
+          <button type="button" id="btnSelectVisible" class="btn-chip">Select All Visible</button>
+          <button type="button" id="btnClearSelection" class="btn-chip">Clear Selection</button>
+        </div>
+      </div>
+
+      <!-- Organizer DataTable -->
+      <div class="table-responsive">
+        <table class="qc-table converter-table" id="organizerTable">
+          <thead>
+            <tr>
+              <th scope="col" class="col-check">
+                <input type="checkbox" id="chkSelectAllVisible" title="Select all visible songs">
+              </th>
+              <th scope="col">Current File Name (Rename / Delete)</th>
+              <th scope="col">New Name Simulation (Auto-Number &amp; Clean)</th>
+              <th scope="col">Playlist Folder</th>
+              <th scope="col">File Type</th>
+              <th scope="col">Size</th>
+            </tr>
+          </thead>
+          <tbody id="organizerTableBody">
+            <tr class="empty-row">
+              <td colspan="6">Loading file list from <code>library/inbox</code>...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>SWARARIA AUDIO LAB &bull; Strictly running on <code>127.0.0.1:8765</code> &bull; Stage 4: Tag &amp; File Organizer</p>
+  </footer>
+
+  <!-- Interactive Folder Browser Modal -->
+  <div class="modal-backdrop hidden" id="folderModal" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="folderModalTitle">Choose Source Folder</h3>
+        <button type="button" id="btnCloseModal" class="btn-text">✕ Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-shortcuts" id="modalShortcuts"></div>
+        <div class="modal-current-bar">
+          <button type="button" id="btnModalUp" class="btn-chip">Up 1 Level</button>
+          <code class="modal-current-path" id="modalCurrentPath">/</code>
+        </div>
+        <div class="modal-dir-list" id="modalDirList"></div>
+        <div class="modal-newfolder-bar">
+          <input type="text" id="newFolderNameInput" class="toolbar-input" placeholder="Create a new subfolder here (optional)...">
+          <button type="button" id="btnCreateSubfolder" class="btn-chip">+ Create Folder</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelModal" class="btn-secondary">Cancel</button>
+        <button type="button" id="btnSelectModalDir" class="btn-primary">Choose This Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PC <-> PC HTTPS Pinned Folder Sync Modal -->
+  <div class="modal-backdrop hidden" id="pcSyncModal" role="dialog" aria-modal="true" aria-labelledby="pcSyncModalTitle">
+    <div class="modal-card remote-modal-card sync-modal-card">
+      <div class="modal-header remote-modal-header">
+        <h3 id="pcSyncModalTitle">Sinkronisasi Folder PC &harr; PC (HTTPS)</h3>
+        <button type="button" id="btnClosePcSyncModal" class="btn-text" aria-label="Tutup">&#10005;</button>
+      </div>
+      <div class="modal-body remote-modal-body">
+        <div class="transfer-warning-strip">
+          <strong>Peringatan Fase Ini:</strong> Hanya file audio terkompresi (.mp3, .m4a, .mp4, .aac, .opus, .ogg, .webm) hingga 150 MiB/file yang disinkronkan. File <strong>.wav &amp; .flac</strong> dilewati; duplikat SHA-256 otomatis dilewati dan nama bentrok di-rename otomatis.
+        </div>
+
+        <section id="pcSyncPairSection" class="sync-section-stack">
+          <p class="panel-sub">Buka menu <strong>Android Remote</strong> di PC sumber &rarr; aktifkan &amp; centang <em>Izinkan sinkronisasi folder PC &harr; PC</em> &rarr; salin kode pairing sekali pakai lalu tempel di sini.</p>
+          <div class="field-group compact-field">
+            <label for="syncDeviceLabelInput" class="field-label">Nama PC Penerima</label>
+            <input type="text" id="syncDeviceLabelInput" class="toolbar-input" value="Swararia PC Sync" maxlength="80">
+          </div>
+          <div class="field-group compact-field">
+            <label for="syncPairingCodeInput" class="field-label">Kode Pairing PC Sumber (<code>swararia1|...</code>)</label>
+            <textarea id="syncPairingCodeInput" class="toolbar-input" rows="3" spellcheck="false" autocomplete="off" placeholder="swararia1|192.168.1.10:8766|...|..."></textarea>
+          </div>
+          <div class="sync-action-row">
+            <button type="button" id="btnStartPcSyncPair" class="btn-primary">Hubungkan (HTTPS Pinning)</button>
+          </div>
+        </section>
+
+        <section id="pcSyncBrowseSection" class="sync-section-stack hidden">
+          <div class="remote-status-strip">
+            <div class="remote-status-info">
+              <strong id="pcSyncPeerStatus">Terhubung</strong>
+              <code id="pcSyncPeerFingerprint" class="sync-fingerprint-code">—</code>
+            </div>
+            <div class="transfer-btn-pair">
+              <button type="button" id="btnRefreshPcSyncPeer" class="btn-chip">Refresh</button>
+              <button type="button" id="btnDisconnectPcSyncPeer" class="btn-danger btn-sm">Putus</button>
+            </div>
+          </div>
+
+          <div class="remote-status-strip">
+            <span class="remote-status-title">Folder Tujuan Lokal (PC Ini):</span>
+            <code id="pcSyncDestLabel" class="source-location-badge">library/inbox</code>
+          </div>
+
+          <div id="pcSyncWarningBanner" class="transfer-warning-strip is-warn hidden">
+            <span id="pcSyncWarningText"></span>
+          </div>
+
+          <div class="sync-folders-header">
+            <span class="field-label">Pilih Folder Playlist dari PC Sumber</span>
+            <div class="transfer-btn-pair">
+              <button type="button" id="btnPcSyncSelectAll" class="btn-chip">Pilih Semua</button>
+              <button type="button" id="btnPcSyncClearFolders" class="btn-chip">Kosongkan</button>
+            </div>
+          </div>
+          <div id="pcSyncFoldersList" class="sync-folders-list"></div>
+
+          <div id="pcSyncDiffBox" class="sync-diff-box hidden">
+            <div id="pcSyncDiffSummary" class="sync-diff-summary"></div>
+            <div id="pcSyncDiffPreviewList" class="sync-diff-list"></div>
+          </div>
+        </section>
+
+        <p id="pcSyncFeedback" class="native-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer remote-modal-footer">
+        <button type="button" id="btnCancelPcSyncModal" class="btn-secondary">Tutup</button>
+        <button type="button" id="btnPreviewPcSync" class="btn-secondary" disabled>Pratinjau Diff</button>
+        <button type="button" id="btnExecutePcSync" class="btn-primary" disabled>Mulai Sinkronisasi</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/pages/organizer/index.js"></script>
+</body>
+</html>
+

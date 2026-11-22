@@ -1,5 +1,7 @@
 # SWARARIA AUDIO LAB — Pro Audio Library, FOH QC & DSP Workstation
 
+> **Browser + Android Remote (koreksi aditif):** HP browser remote HTTP/PIN dipertahankan seperti baseline lama melalui menu **HP Remote**. Menu **Android Remote** terpisah menambahkan HTTPS v1, fingerprint, invite dan approval untuk Android0.5; default OFF/manual ON. Tidak perlu memasang sertifikat di HP dan tidak ada perubahan APK. **HTTPS Android tidak melindungi jalur browser HTTP/PIN lama:** gunakan hanya LAN tepercaya, jangan expose internet atau menjalankan launcher default di VPS publik. Rencana/batas verifikasi: [DUAL-REMOTE-PLAN.md](docs/DUAL-REMOTE-PLAN.md); kontrak native: [SECURE_REMOTE.md](docs/SECURE_REMOTE.md). Windows/WSL/HP nyata tetap perlu diuji.
+
 Workstation lokal berbasis web & CLI untuk **Audio Engineer**, **Operator FOH / Soundsystem**, **DJ**, dan **Event Organizer**. Dirancang dengan estetika **shadcn/ui Dark High-Contrast** dan arsitektur **4 Halaman Dedicated** yang terhubung melalui _Shared Workspace State_.
 
 ---
@@ -42,8 +44,8 @@ Workstation lokal berbasis web & CLI untuk **Audio Engineer**, **Operator FOH / 
 
 Aplikasi ini dapat dijalankan dalam **2 mode**:
 
-1. **Desktop App Mode (`desktop_app.py`)**: Membuka jendela aplikasi desktop mandiri (_Native OS Window_ via `pywebview` atau _Standalone App Window_).
-2. **Web Server Mode (`web_ui.py`)**: Menjalankan server lokal di `http://127.0.0.1:8765` untuk diakses lewat browser.
+1. **Desktop App Mode (`python -m swararia.desktop`)**: Membuka jendela aplikasi desktop mandiri (_Native OS Window_ via `pywebview` atau _Standalone App Window_).
+2. **Web Server Mode (`python -m swararia`)**: Menjalankan server lokal di `http://127.0.0.1:8765` untuk diakses lewat browser.
 
 ### Cara 1-Klik (Otomatis Setup `.venv` + Dependencies + Buka Jendela Desktop):
 
@@ -58,7 +60,7 @@ Jika Anda ingin membagikan aplikasi ini ke **orang awam** agar mereka **tidak pe
 
 ### Cara 1-Klik di Windows:
 
-Cukup **klik 2x file `build_installer.bat`**. Skrip ini akan otomatis:
+Cukup **klik 2x file `packaging/build_installer.bat`**. Skrip ini akan otomatis:
 
 1. Memeriksa PyInstaller & dependensi build.
 2. Memeriksa Inno Setup 6 (menawarkan auto-install via winget jika belum ada).
@@ -72,10 +74,10 @@ Cukup **klik 2x file `build_installer.bat`**. Skrip ini akan otomatis:
 winget install JRSoftware.InnoSetup
 
 # 2. Build aplikasi desktop + kompilasi Setup Wizard sekaligus:
-python build_desktop.py --install-deps --installer
+python packaging/build_desktop.py --install-deps --installer
 ```
 
-Hasilnya adalah file **`dist\SwarariaAudioLab_Setup.exe`**.
+Hasilnya adalah file **`dist\SwarariaAudioLab_Setup.exe`** (beserta file checksum **`dist\SwarariaAudioLab_Setup.exe.sha256`**).
 Saat file ini dijalankan di komputer Windows mana pun:
 
 - Tampil wizard instalasi modern standar Windows.
@@ -83,11 +85,35 @@ Saat file ini dijalankan di komputer Windows mana pun:
 - Otomatis membuat shortcut di Desktop dan Start Menu.
 - Dilengkapi fitur Uninstall bersih via Windows Settings (_Add or remove programs_).
 
+### Mengatasi Peringatan Windows Defender SmartScreen (`Unknown publisher`):
+
+Jika installer dirilis tanpa sertifikat **Code Signing** komersial/resmi, Windows dapat menampilkan jendela _"Windows protected your PC"_ dengan keterangan `Publisher: Unknown publisher`:
+
+- **Untuk Pengguna (Menjalankan Installer):**
+  1. Klik **`More info`** (atau **`Info selengkapnya`**) pada dialog SmartScreen, lalu klik **`Run anyway`** (**`Jalankan saja`**).
+  2. Jika file diunduh dari internet/GitHub Releases, verifikasi keasliannya terlebih dahulu dengan mencocokkan hash SHA-256 terhadap file `.sha256` rilis:
+     ```powershell
+     Get-FileHash .\SwarariaAudioLab_Setup.exe -Algorithm SHA256
+     ```
+- **Untuk Developer / Rilis Publik (Code Signing Opsional):**
+  `packaging/build_desktop.py` dan `packaging/installer.iss` mendukung Authenticode signing opsional (otomatis menandatangani `SwarariaAudioLab.exe`, uninstaller, dan `SwarariaAudioLab_Setup.exe`) apabila Anda memiliki sertifikat Code Signing (mis. Microsoft Artifact Signing, SignPath untuk open-source, atau CA komersial seperti DigiCert/Sectigo):
+  ```powershell
+  # 1. Via Windows Certificate Store / USB Token (SHA-1 thumbprint):
+  python packaging/build_desktop.py --installer --sign-thumbprint "<THUMBPRINT_SHA1>"
+
+  # 2. Via file .pfx/.p12 (password diambil dari env var, tidak ditulis di argumen CLI):
+  $env:SWARARIA_SIGN_PFX_PASSWORD = "password-pfx-anda"
+  python packaging/build_desktop.py --installer --sign-pfx "C:\path\cert.pfx"
+
+  # 3. Via perintah kustom (mis. Azure Artifact Signing / wrapper CI):
+  python packaging/build_desktop.py --installer --sign-command 'azuresigntool sign ... "{file}"'
+  ```
+
 ---
 
 ## 🔄 Pembaruan Otomatis (In-App GitHub Update Checker)
 
-Aplikasi ini telah dilengkapi fitur **Pemeriksa Pembaruan Otomatis** terintegrasi dengan repository GitHub [dediks/audio-library](https://github.com/dediks/audio-library):
+Aplikasi ini telah dilengkapi fitur **Pemeriksa Pembaruan Otomatis** terintegrasi dengan repository GitHub [dediks/swr-player-desktop](https://github.com/dediks/swr-player-desktop):
 
 1. **Badge Versi di Header**: Menampilkan versi saat ini (misal `v1.0.0`). Pengguna dapat mengkliknya kapan saja untuk memeriksa pembaruan.
 2. **Deteksi Otomatis di Background**: Jika Anda merilis versi baru di GitHub Releases (misal `v1.0.1`), indikator akan menyala hijau (`v1.0.1 ⚡`) dan notifikasi muncul.
@@ -106,8 +132,8 @@ source .venv/bin/activate       # Di Windows: .venv\Scripts\activate.bat
 pip install -r requirements.txt
 
 # 3. Jalankan sebagai Desktop App ATAU Web Server
-python3 desktop_app.py          # Mode Jendela Desktop
-python3 web_ui.py               # Mode Server Browser (http://127.0.0.1:8765)
+python3 -m swararia.desktop      # Mode Jendela Desktop
+python3 -m swararia               # Mode Server Browser (http://127.0.0.1:8765)
 ```
 
 Halaman Workstation:
@@ -119,35 +145,37 @@ Halaman Workstation:
 
 ---
 
-## 💻 Penggunaan CLI (`audio_manager.py`)
+## 💻 Penggunaan CLI (`python -m swararia.core.audio_manager`)
 
 ### 1. Pencarian YouTube Music via Terminal
 
 ```bash
-python3 audio_manager.py search "Sheila on 7" --type songs --limit 10
+python3 -m swararia.core.audio_manager search "Sheila on 7" --type songs --limit 10
 ```
 
 ### 2. Audit Koleksi Audio Lokal ke CSV (Tanpa YouTube)
 
 ```bash
-python3 audio_manager.py scan "/path/ke/koleksi/musik" --out quality_report.csv
+python3 -m swararia.core.audio_manager scan "/path/ke/koleksi/musik" --out quality_report.csv
 ```
 
 ### 3. Unduh Audio Berizin + Audit QC Otomatis
 
 ```bash
 # Native Opus 48kHz / AAC (0% Generation Loss):
-python3 audio_manager.py download "URL_KONTEN_BERIZIN" --authorized --scan
+python3 -m swararia.core.audio_manager download "URL_KONTEN_BERIZIN" --authorized --scan
 
 # MP3 320 kbps CBR (Kompatibilitas CDJ / USB):
-python3 audio_manager.py download "URL_KONTEN_BERIZIN" --authorized --format mp3 --bitrate 320 --scan
+python3 -m swararia.core.audio_manager download "URL_KONTEN_BERIZIN" --authorized --format mp3 --bitrate 320 --scan
 
 # Playlist Otomatis Masuk Subfolder:
-python3 audio_manager.py download "URL_PLAYLIST_BERIZIN" --authorized --playlist --scan
+python3 -m swararia.core.audio_manager download "URL_PLAYLIST_BERIZIN" --authorized --playlist --scan
 ```
 
 ---
 
 ## 📖 Dokumentasi Teknis Lengkap
 
-Lihat [**`DOCUMENTATION.md`**](./DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.
+Arsitektur kode, aturan layer, dan cara menambah rute: [**`docs/architecture.md`**](./docs/architecture.md).
+
+Lihat [**`DOCUMENTATION.md`**](./docs/DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.
