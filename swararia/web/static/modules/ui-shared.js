@@ -995,6 +995,14 @@ export async function saveDefaultLibraryDir(libraryDir = '', opts = {}) {
   const payload = opts.reset ? { reset: true } : { library_dir: String(libraryDir || '').trim() };
   const res = await apiPost('/api/settings/library', payload);
   if (res.ok) {
+    if (res.data?.library_dir) {
+      saveSharedWorkspaceState({ sourceDir: res.data.library_dir });
+    }
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('swararia:library-changed', {
+        detail: { reason: 'default-library-changed', libraryDir: res.data?.library_dir || '' },
+      }));
+    }
     notify({
       type: 'success',
       title: 'Folder Koleksi Default Disimpan',

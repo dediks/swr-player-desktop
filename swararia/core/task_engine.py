@@ -9,6 +9,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from swararia.core import audio_manager
 from swararia.core import fs_browser
@@ -26,15 +27,27 @@ class AudioMetadataCache:
         self._dir_cache: dict[str, tuple[float, tuple[list[dict], list[dict]]]] = {}
 
     def invalidate_dir_cache(self, prefix: Path | str | None = None) -> None:
-        """Clears directory listing cache for a specific path or globally."""
+        """Clears directory listing cache for a specific path (plus ancestors/descendants) or globally."""
         with self.lock:
             if prefix is None:
                 self._dir_cache.clear()
-            else:
-                p_str = str(prefix).rstrip("/")
-                keys_to_del = [k for k in self._dir_cache if k == p_str or k.startswith(p_str + "/")]
-                for k in keys_to_del:
-                    self._dir_cache.pop(k, None)
+                return
+            try:
+                target = Path(prefix).resolve()
+            except OSError:
+                self._dir_cache.clear()
+                return
+            keys_to_del = []
+            for k in self._dir_cache:
+                try:
+                    kp = Path(k).resolve()
+                except OSError:
+                    keys_to_del.append(k)
+                    continue
+                if kp == target or kp.is_relative_to(target) or target.is_relative_to(kp):
+                    keys_to_del.append(k)
+            for k in keys_to_del:
+                self._dir_cache.pop(k, None)
 
     def put_qc(self, file_path: Path | str, qc_data: dict) -> None:
         with self.lock:
@@ -361,6 +374,7 @@ class TaskQueueManager:
         inbox_dir: Path,
         archive_file: Path,
         cookies_file: Path,
+        on_library_changed: Callable[[], None] | None = None,
     ) -> None:
         self.lock = threading.Lock()
         self.queue: list[dict] = []
@@ -371,6 +385,16 @@ class TaskQueueManager:
         self.inbox_dir = inbox_dir
         self.archive_file = archive_file
         self.cookies_file = cookies_file
+        self.on_library_changed = on_library_changed
+
+    def _notify_library_changed(self) -> None:
+        """Invokes the optional server-layer library revision callback safely."""
+        cb = self.on_library_changed
+        if callable(cb):
+            try:
+                cb()
+            except Exception:
+                pass
 
     def get_snapshot(self, history_limit: int = 10) -> dict:
         with self.lock:
@@ -804,6 +828,10 @@ class TaskQueueManager:
             title = "Proses Gagal"
             summary = f"Gagal memproses {error_count} file audio. Periksa log terminal untuk detail."
 
+        if converted_count > 0:
+            self.metadata_cache.invalidate_dir_cache(dest_resolved or source_resolved)
+            self._notify_library_changed()
+
         self.finish_task(
             task,
             "SUCCESS" if error_count == 0 else "FAILED",
@@ -1104,6 +1132,9 @@ class TaskQueueManager:
                     self.append_log(task, f"QC error on {nf.name}: {qc_err}")
 
         dl_count = len(new_files)
+        if dl_count > 0:
+            self.metadata_cache.invalidate_dir_cache(self.inbox_dir)
+            self._notify_library_changed()
         skip_count = len(skipped_files)
         stats = {
             "downloaded": dl_count,
@@ -1320,6 +1351,12 @@ class TaskQueueManager:
             created = int(res.get("created_files") or 0)
             songs = int(res.get("songs_count") or 0)
             out_dir_str = str(res.get("out_dir") or "")
+            if created > 0:
+                if out_dir_str:
+                    self.metadata_cache.invalidate_dir_cache(Path(out_dir_str))
+                else:
+                    self.metadata_cache.invalidate_dir_cache()
+                self._notify_library_changed()
 
             if errors == 0 and created > 0:
                 self.finish_task(
@@ -1561,6 +1598,8 @@ class TaskQueueManager:
         self.metadata_cache.invalidate_dir_cache(dest_root)
         if saved_paths:
             self.metadata_cache.probe_files_fast(saved_paths, include_spectral=False)
+        if synced_count > 0:
+            self._notify_library_changed()
         stats = {
             "synced": synced_count,
             "skipped": duplicate_count,

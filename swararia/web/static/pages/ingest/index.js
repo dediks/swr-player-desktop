@@ -1997,6 +1997,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ev && ev.detail) syncCookieStatusUI(ev.detail);
   });
 
+  window.addEventListener('swararia:library-changed', () => {
+    refreshInboxSummary();
+  });
+
+  window.addEventListener('swararia:route-changed', (ev) => {
+    if (ev && ev.detail && ev.detail.key === 'ingest') {
+      refreshInboxSummary();
+    }
+  });
+
   window.addEventListener('swararia:header-cookie-click', (ev) => {
     const d = ev && ev.detail;
     if (d && d.cookies_status !== 'premium' && document.body?.dataset?.page === 'ingest') {

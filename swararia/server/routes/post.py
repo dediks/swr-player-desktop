@@ -269,6 +269,7 @@ class PostRoutesMixin:
             if ok:
                 for cur, restored in pairs:
                     state.metadata_cache.rename_entry(cur, restored)
+                hub.remote_hub.bump_library_revision()
             self.send_json(200 if ok else 409, {"ok": ok, "message": msg} if ok else {"error": msg})
         elif path == "/api/delete":
             self._handle_post_delete(payload)

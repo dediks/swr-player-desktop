@@ -173,6 +173,19 @@ export function createQueueMonitor(opts = {}) {
           if (typeof opts.onTaskFinished === 'function') {
             opts.onTaskFinished(task, data);
           }
+
+          const stats = task.stats && typeof task.stats === 'object' ? task.stats : {};
+          const producedMedia =
+            Number(stats.downloaded || 0) > 0 ||
+            Number(stats.converted || 0) > 0 ||
+            Number(stats.synced || 0) > 0;
+          const mayHaveChangedLibrary =
+            producedMedia || (task.status !== 'FAILED' && task.outcome !== 'ALREADY_EXISTS');
+          if (mayHaveChangedLibrary && typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('swararia:library-changed', {
+              detail: { reason: 'task-finished', task },
+            }));
+          }
         });
         saveSeenTaskIds(seenSet);
       }

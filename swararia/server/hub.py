@@ -403,6 +403,7 @@ class RemotePlayerHub:
                 "master_online": (now - self.master_updated_at) < 5.0,
                 "master_updated_at": self.master_updated_at,
                 "active_remotes_count": len(self.remote_clients),
+                "upload_library_version": self.library_revision,
                 "state": self.master_state,
             }
 
