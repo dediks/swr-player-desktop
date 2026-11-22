@@ -13,7 +13,7 @@ from swararia.core.fs_browser import safe_paths
 # ---------------------------------------------------------------------------
 # Undo log for batch renames
 # ---------------------------------------------------------------------------
-RENAME_HISTORY_FILE = safe_paths.BASE_DIR / "library" / "rename_history.json"
+RENAME_HISTORY_FILE = safe_paths.APP_DATA_DIR / "rename_history.json"
 RENAME_HISTORY_LIMIT = 10
 _history_lock = threading.Lock()
 

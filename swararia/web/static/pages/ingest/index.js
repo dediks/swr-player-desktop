@@ -308,6 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearLogs = $('btnClearLogs');
 
   // Inbox hub
+  const ingestInboxPathBadge = $('ingestInboxPathBadge');
   const inboxTotalSongsPill = $('inboxTotalSongsPill');
   const inboxTotalPlaylistsPill = $('inboxTotalPlaylistsPill');
   const btnOpenInboxExplorer = $('btnOpenInboxExplorer');
@@ -1662,7 +1663,14 @@ document.addEventListener('DOMContentLoaded', () => {
     currentInboxDir = data.source_dir || '';
     const files = data.files || [];
     const playlists = (data.playlists || []).filter(p => p.name !== '__ROOT__');
-    if (inboxTotalSongsPill) inboxTotalSongsPill.textContent = `${files.length} Lagu di Inbox`;
+    if (ingestInboxPathBadge && currentInboxDir) {
+      ingestInboxPathBadge.textContent = currentInboxDir;
+      ingestInboxPathBadge.title = currentInboxDir;
+    }
+    if (btnOpenInboxExplorer && currentInboxDir) {
+      btnOpenInboxExplorer.title = `Buka ${currentInboxDir} di File Explorer`;
+    }
+    if (inboxTotalSongsPill) inboxTotalSongsPill.textContent = `${files.length} Lagu di Koleksi`;
     if (inboxTotalPlaylistsPill) inboxTotalPlaylistsPill.textContent = `${playlists.length} Folder Playlist`;
   }
 

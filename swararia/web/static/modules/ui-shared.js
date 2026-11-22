@@ -973,6 +973,45 @@ export async function openFolderInExplorer(folderPath = '', sourceDir = '') {
   }
 }
 
+/**
+ * Formats the source folder badge text truthfully across all pages.
+ * @param {string} sourceDir
+ * @param {boolean} isDefault
+ * @returns {string}
+ */
+export function formatSourceBadgeText(sourceDir, isDefault) {
+  const clean = String(sourceDir || '').trim();
+  if (!clean) return 'SwarariaAudioLab (Koleksi Default)';
+  return isDefault ? `${clean} (Default)` : clean;
+}
+
+/**
+ * Persists a folder path as the server-wide default audio library (or resets to OS default).
+ * @param {string} libraryDir
+ * @param {{ reset?: boolean }} [opts]
+ * @returns {Promise<{ ok: boolean, data: any, error?: string }>}
+ */
+export async function saveDefaultLibraryDir(libraryDir = '', opts = {}) {
+  const payload = opts.reset ? { reset: true } : { library_dir: String(libraryDir || '').trim() };
+  const res = await apiPost('/api/settings/library', payload);
+  if (res.ok) {
+    notify({
+      type: 'success',
+      title: 'Folder Koleksi Default Disimpan',
+      message: res.data?.message || 'Folder koleksi default berhasil diperbarui.',
+      duration: 4200,
+    });
+  } else {
+    notify({
+      type: 'error',
+      title: 'Gagal Menyimpan Folder Default',
+      message: res.error || res.data?.error || 'Tidak dapat menyimpan folder koleksi default.',
+      playSound: true,
+    });
+  }
+  return res;
+}
+
 // ==============================================================================
 // GITHUB RELEASE UPDATE CHECKER & IN-APP AUTO-INSTALLER
 // ==============================================================================

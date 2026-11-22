@@ -17,6 +17,8 @@ import {
   createQualityTierBadge,
   isYoutubePremiumMax,
   openFolderInExplorer,
+  formatSourceBadgeText,
+  saveDefaultLibraryDir,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
 } from '../../modules/ui-shared.js';
@@ -132,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sourceDirInput = document.getElementById('sourceDirInput');
   const playerCountSummary = document.getElementById('playerCountSummary');
   const btnBrowseSource = document.getElementById('btnBrowseSource');
+  const btnSetDefaultLibrary = document.getElementById('btnSetDefaultLibrary');
   const btnResetInbox = document.getElementById('btnResetInbox');
   const playlistGrid = document.getElementById('playlistGrid');
   const playlistSelectDropdown = document.getElementById('playlistSelectDropdown');
@@ -221,6 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sharedInit = getSharedWorkspaceState();
   let currentSourceDir = sharedInit.sourceDir || '';
   let defaultInboxDir = '';
+  let defaultInboxEnvOverride = false;
   let activePlaylist = sharedInit.activePlaylist || 'ALL';
   let activeTrackRelPath = sharedInit.activeTrackRelPath || '';
 
@@ -2232,14 +2236,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function syncSourceLocationUI() {
     const isDefault =
       !currentSourceDir ||
-      (defaultInboxDir && currentSourceDir === defaultInboxDir) ||
-      currentSourceDir.endsWith('/library/inbox') ||
-      currentSourceDir.endsWith('\\library\\inbox');
+      Boolean(defaultInboxDir && currentSourceDir === defaultInboxDir);
     if (activeSourceBadge) {
-      activeSourceBadge.textContent = isDefault
-        ? 'library/inbox (Koleksi Default Aplikasi)'
-        : currentSourceDir;
-      activeSourceBadge.title = currentSourceDir || 'library/inbox';
+      activeSourceBadge.textContent = formatSourceBadgeText(currentSourceDir || defaultInboxDir, isDefault);
+      activeSourceBadge.title = currentSourceDir || defaultInboxDir || '';
+    }
+    if (btnSetDefaultLibrary) {
+      btnSetDefaultLibrary.classList.toggle('hidden', isDefault || isRemoteController || defaultInboxEnvOverride);
     }
     if (btnResetInbox) {
       btnResetInbox.classList.toggle('hidden', isDefault || isRemoteController);
@@ -2263,6 +2266,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (data.default_inbox) defaultInboxDir = data.default_inbox;
+    defaultInboxEnvOverride = Boolean(data.default_inbox_env_override);
     if (data.source_dir) {
       currentSourceDir = data.source_dir;
       if (sourceDirInput) sourceDirInput.value = data.source_dir;
@@ -3038,6 +3042,26 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenExplorer.addEventListener('click', () => {
       const sub = activePlaylist !== 'ALL' && activePlaylist !== '__ROOT__' ? activePlaylist : '';
       openFolderInExplorer(sub, currentSourceDir);
+    });
+  }
+
+  if (btnSetDefaultLibrary) {
+    btnSetDefaultLibrary.addEventListener('click', async () => {
+      if (!currentSourceDir || isRemoteController) return;
+      btnSetDefaultLibrary.disabled = true;
+      try {
+        const res = await saveDefaultLibraryDir(currentSourceDir);
+        if (res.ok && res.data?.library_dir) {
+          defaultInboxDir = res.data.library_dir;
+          defaultInboxEnvOverride = Boolean(res.data.env_override);
+          currentSourceDir = res.data.library_dir;
+          if (sourceDirInput) sourceDirInput.value = currentSourceDir;
+          syncSourceLocationUI();
+          persistWorkspaceState();
+        }
+      } finally {
+        btnSetDefaultLibrary.disabled = false;
+      }
     });
   }
 

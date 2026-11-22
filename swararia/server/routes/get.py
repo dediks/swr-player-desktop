@@ -179,18 +179,29 @@ class GetRoutesMixin:
             self.send_json(200, hub.remote_hub.get_remote_state(client_id, client_ip, client_tag, ua))
         elif path == "/api/queue":
             self.send_json(200, state.task_manager.get_snapshot(history_limit=10))
+        elif path == "/api/settings/library":
+            if not self.local_request_allowed():
+                self.send_json(403, {"ok": False, "code": "local_origin_required", "error": "Akses lokal diperlukan."})
+                return
+            self.send_json(200, {"ok": True, **state.get_library_settings()})
         elif path == "/api/library":
             qs = parse_qs(parsed.query)
             raw_src = qs.get("source_dir", [None])[0]
             try:
                 src_dir = state.resolve_safe_dir(raw_src, state.INBOX_DIR, must_exist=True) if raw_src else state.INBOX_DIR.resolve()
                 files_data, playlists_data = self.get_library_files(src_dir)
-                self.send_json(200, {
+                lib_cfg = state.get_library_settings()
+                resp = {
                     "files": files_data,
                     "playlists": playlists_data,
                     "source_dir": str(src_dir),
                     "default_inbox": str(state.INBOX_DIR.resolve()),
-                })
+                    "default_inbox_source": lib_cfg["source"],
+                    "default_inbox_env_override": lib_cfg["env_override"],
+                }
+                if is_local:
+                    resp["os_default_inbox"] = lib_cfg["os_default_dir"]
+                self.send_json(200, resp)
             except Exception as exc:
                 self.send_json(400, {"error": str(exc)})
         elif path == "/api/stream":

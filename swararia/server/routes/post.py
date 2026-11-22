@@ -46,7 +46,7 @@ class PostRoutesMixin:
             self.send_json(400, {'code': 'invalid_length'})
             return
         content_length = int(lengths[0])
-        if content_length > (262144 if path == '/api/remote/state' else 4096 if path.startswith('/api/native-remote') else 1024 * 1024):
+        if content_length > (262144 if path == '/api/remote/state' else 4096 if (path.startswith('/api/native-remote') or path == '/api/settings/library') else 1024 * 1024):
             self.send_json(413, {'code': 'body_too_large'})
             return
         body = self.rfile.read(content_length)
@@ -245,6 +245,8 @@ class PostRoutesMixin:
             self._handle_post_search(payload)
         elif path == "/api/playlist/inspect":
             self._handle_post_playlist_inspect(payload)
+        elif path == "/api/settings/library":
+            self._handle_post_library_settings(payload)
         elif path == "/api/scan":
             self._handle_post_scan(payload)
         elif path == "/api/browse-dirs":

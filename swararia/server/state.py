@@ -10,11 +10,14 @@ APP_VERSION = "1.0.0"
 GITHUB_REPO = "dediks/swr-player-desktop"
 BASE_DIR = fs_browser.BASE_DIR
 RESOURCE_DIR = fs_browser.RESOURCE_DIR
+APP_DATA_DIR = fs_browser.APP_DATA_DIR
+SETTINGS_FILE = fs_browser.SETTINGS_FILE
+DEFAULT_LIBRARY_DIR = fs_browser.DEFAULT_LIBRARY_DIR
 STATIC_DIR = config.STATIC_DIR
 INBOX_DIR = fs_browser.INBOX_DIR
-ARCHIVE_FILE = BASE_DIR / "library" / "downloaded_ids.txt"
-COOKIES_FILE = BASE_DIR / "library" / "cookies.txt"
-GITHUB_TOKEN_FILE = BASE_DIR / "library" / "github_token.txt"
+ARCHIVE_FILE = APP_DATA_DIR / "downloaded_ids.txt"
+COOKIES_FILE = APP_DATA_DIR / "cookies.txt"
+GITHUB_TOKEN_FILE = APP_DATA_DIR / "github_token.txt"
 
 # Instantiate shared state managers
 metadata_cache = AudioMetadataCache()
@@ -24,6 +27,35 @@ task_manager = TaskQueueManager(
     archive_file=ARCHIVE_FILE,
     cookies_file=COOKIES_FILE,
 )
+
+
+def get_library_settings() -> dict:
+    """Returns a snapshot of the active and OS-default library directory settings."""
+    return fs_browser.get_library_settings_snapshot(
+        active_inbox=INBOX_DIR,
+        settings_file=SETTINGS_FILE,
+    )
+
+
+def update_default_library_dir(
+    raw_path: str | None,
+    *,
+    reset: bool = False,
+    server=None,
+) -> dict:
+    """Validates, persists, and propagates a new default library folder across live state."""
+    global INBOX_DIR
+    new_dir, _source = fs_browser.set_configured_library_dir(
+        raw_path,
+        reset=reset,
+        settings_file=SETTINGS_FILE,
+    )
+    INBOX_DIR = new_dir
+    task_manager.inbox_dir = new_dir
+    metadata_cache.invalidate_dir_cache()
+    if server is not None and getattr(server, "secure_remote", None) is not None:
+        server.secure_remote.default_inbox = new_dir
+    return get_library_settings()
 
 # Backward-compatible module-level aliases
 SKIP_SYSTEM_DIRS = fs_browser.SKIP_SYSTEM_DIRS

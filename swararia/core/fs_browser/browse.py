@@ -32,13 +32,22 @@ def iter_audio_files_safe(root_dir: Path, allowed_exts: set[str] | None = None) 
     return results
 
 
-def get_windows_shortcuts(default_inbox: Path = safe_paths.INBOX_DIR) -> list[dict]:
+def get_windows_shortcuts(default_inbox: Path | None = None) -> list[dict]:
     """Builds quick-access shortcuts for Native Windows, macOS, Linux, and WSL environments."""
+    effective_inbox = (default_inbox if default_inbox is not None else safe_paths.INBOX_DIR).resolve()
+    os_default = safe_paths.DEFAULT_LIBRARY_DIR.resolve()
     home_dir = Path.home().resolve()
     shortcuts = [
-        {"label": "📥 Inbox Proyek", "path": str(default_inbox.resolve())},
-        {"label": "🏠 Home User" if os.name == "nt" else "🏠 WSL/Linux Home", "path": str(home_dir)},
+        {"label": "📥 Koleksi Default", "path": str(effective_inbox)},
     ]
+    if effective_inbox != os_default:
+        shortcuts.append({"label": "🎵 Default OS (SwarariaAudioLab)", "path": str(os_default)})
+    legacy_inbox = safe_paths.get_legacy_inbox_dir()
+    if legacy_inbox is not None and legacy_inbox != effective_inbox:
+        shortcuts.append({"label": "📦 Legacy Inbox", "path": str(legacy_inbox)})
+    shortcuts.append(
+        {"label": "🏠 Home User" if os.name == "nt" else "🏠 WSL/Linux Home", "path": str(home_dir)},
+    )
 
     for sub_label, sub_name in (
         ("🎵 Music", "Music"),
@@ -67,61 +76,20 @@ def get_windows_shortcuts(default_inbox: Path = safe_paths.INBOX_DIR) -> list[di
 
     mnt_root = Path("/mnt")
     if mnt_root.is_dir():
-        win_users_dir = mnt_root / "c" / "Users"
-        if win_users_dir.is_dir():
-            skip_users = {
-                "public",
-                "default",
-                "default user",
-                "all users",
-                "wsiaccount",
-                "wdagutilityaccount",
-                "administrator",
-                "guest",
-            }
-            candidate_users: list[tuple[float, Path]] = []
-            try:
-                for udir in sorted(win_users_dir.iterdir()):
-                    name_low = udir.name.lower()
-                    if (
-                        udir.name.startswith(".")
-                        or name_low in skip_users
-                        or name_low.startswith("defaultuser")
-                        or name_low.startswith("temp")
-                    ):
-                        continue
-                    try:
-                        if not udir.is_dir():
-                            continue
-                        latest_mtime = udir.stat().st_mtime
-                        for probe_sub in ("Downloads", "Desktop", "Music", "NTUSER.DAT"):
-                            sp = udir / probe_sub
-                            try:
-                                if sp.exists():
-                                    latest_mtime = max(latest_mtime, sp.stat().st_mtime)
-                            except OSError:
-                                pass
-                        candidate_users.append((latest_mtime, udir))
-                    except OSError:
-                        continue
-            except OSError:
-                pass
-
-            if candidate_users:
-                candidate_users.sort(key=lambda item: item[0], reverse=True)
-                primary_udir = candidate_users[0][1]
-                shortcuts.append({"label": f"🪟 Win User ({primary_udir.name})", "path": str(primary_udir)})
-                for sub_label, sub_name in (
-                    ("🎵 Win Music", "Music"),
-                    ("⬇️ Win Downloads", "Downloads"),
-                    ("🖥️ Win Desktop", "Desktop"),
-                ):
-                    sub_p = primary_udir / sub_name
-                    try:
-                        if sub_p.is_dir():
-                            shortcuts.append({"label": sub_label, "path": str(sub_p)})
-                    except OSError:
-                        pass
+        primary_udir = safe_paths.detect_wsl_windows_home(mnt_root)
+        if primary_udir is not None:
+            shortcuts.append({"label": f"🪟 Win User ({primary_udir.name})", "path": str(primary_udir)})
+            for sub_label, sub_name in (
+                ("🎵 Win Music", "Music"),
+                ("⬇️ Win Downloads", "Downloads"),
+                ("🖥️ Win Desktop", "Desktop"),
+            ):
+                sub_p = primary_udir / sub_name
+                try:
+                    if sub_p.is_dir():
+                        shortcuts.append({"label": sub_label, "path": str(sub_p)})
+                except OSError:
+                    pass
 
         try:
             for d in sorted(mnt_root.iterdir()):
@@ -147,10 +115,11 @@ def get_windows_shortcuts(default_inbox: Path = safe_paths.INBOX_DIR) -> list[di
 def browse_directory(
     raw_path: str | None,
     create_subfolder: str | None = None,
-    default_inbox: Path = safe_paths.INBOX_DIR,
+    default_inbox: Path | None = None,
 ) -> dict:
     """Resolves a directory, optionally creates a sanitized subfolder, and lists subdirectories."""
-    curr_dir = safe_paths.resolve_safe_dir(raw_path, default_inbox, must_exist=True)
+    effective_inbox = default_inbox if default_inbox is not None else safe_paths.INBOX_DIR
+    curr_dir = safe_paths.resolve_safe_dir(raw_path, effective_inbox, must_exist=True)
     if isinstance(create_subfolder, str) and create_subfolder.strip():
         clean_sub = re.sub(r'[<>:"/\\|?*]', "", create_subfolder.strip())
         if clean_sub and not clean_sub.startswith("."):
@@ -190,7 +159,7 @@ def browse_directory(
         "parent": parent_path,
         "dirs": subdirs,
         "subdirs": subdirs,
-        "shortcuts": get_windows_shortcuts(default_inbox),
+        "shortcuts": get_windows_shortcuts(effective_inbox),
     }
 
 

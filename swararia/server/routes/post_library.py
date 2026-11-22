@@ -5,11 +5,49 @@ from pathlib import Path
 
 from swararia.core import audio_manager
 from swararia.core import fs_browser
-from swararia.server import state
+from swararia.server import hub, state
 
 
 class LibraryPostMixin:
-    """Library endpoints: scan, browse, probe, rename, organize and delete."""
+    """Library endpoints: scan, browse, probe, rename, organize, delete and library settings."""
+
+    def _handle_post_library_settings(self, payload: dict) -> None:
+        if not self.local_request_allowed(write=True):
+            self.send_json(403, {
+                "ok": False,
+                "code": "local_origin_required",
+                "error": "Permintaan tulis lokal tidak diizinkan.",
+            })
+            return
+
+        allowed_keys = {"library_dir", "reset"}
+        if set(payload) - allowed_keys:
+            self.send_json(400, {"ok": False, "error": "Parameter pengaturan folder koleksi tidak valid."})
+            return
+
+        reset = payload.get("reset", False)
+        if not isinstance(reset, bool):
+            self.send_json(400, {"ok": False, "error": "Parameter reset harus berupa boolean."})
+            return
+
+        raw_dir = payload.get("library_dir")
+        if raw_dir is not None and not isinstance(raw_dir, str):
+            self.send_json(400, {"ok": False, "error": "Parameter library_dir harus berupa string."})
+            return
+
+        try:
+            snapshot = state.update_default_library_dir(raw_dir, reset=reset, server=self.server)
+            hub.remote_hub.bump_library_revision()
+            msg = (
+                f"Folder koleksi default dikembalikan ke standar OS: {snapshot['library_dir']}"
+                if snapshot["source"] == "default"
+                else f"Folder koleksi default berhasil disimpan: {snapshot['library_dir']}"
+            )
+            self.send_json(200, {"ok": True, **snapshot, "message": msg})
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except OSError:
+            self.send_json(500, {"ok": False, "error": "Gagal menyimpan pengaturan folder koleksi default."})
 
 
     def _handle_post_scan(self, payload: dict | None = None) -> None:

@@ -22,7 +22,9 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\SwarariaAudioLab
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-; Non-admin install mode (seperti VS Code / Spotify) agar ramah pengguna awam & mudah menulis ke folder library
+; Non-admin install mode (seperti VS Code / Spotify) agar ramah pengguna awam.
+; Koleksi audio pengguna disimpan di folder Music pengguna (bukan di folder instalasi {app})
+; agar aman saat upgrade/uninstall dan sinkron antara mode desktop .exe maupun web.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
@@ -47,8 +49,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "..\dist\SwarariaAudioLab\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\SwarariaAudioLab\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "{#MyAppExeName}"
 
-[Dirs]
-Name: "{app}\library\inbox"; Permissions: users-modify
+; Folder koleksi audio default dibuat otomatis di direktori Music pengguna saat aplikasi dijalankan.
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

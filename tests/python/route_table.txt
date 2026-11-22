@@ -29,6 +29,7 @@
 /api/resample
 /api/scan
 /api/search
+/api/settings/library
 /api/splitter/detect
 /api/splitter/execute
 /api/splitter/inspect

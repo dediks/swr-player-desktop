@@ -15,6 +15,8 @@ import {
   openRenameModal,
   openDeleteModal,
   openFolderInExplorer,
+  formatSourceBadgeText,
+  saveDefaultLibraryDir,
   getSharedWorkspaceState,
   saveSharedWorkspaceState,
 } from '../../modules/ui-shared.js';
@@ -47,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const activeSourceBadge = document.getElementById('activeSourceBadge');
   const sourceDirInput = document.getElementById('sourceDirInput');
   const btnBrowseSource = document.getElementById('btnBrowseSource');
+  const btnSetDefaultLibrary = document.getElementById('btnSetDefaultLibrary');
   const btnResetInbox = document.getElementById('btnResetInbox');
   const playlistGrid = document.getElementById('playlistGrid');
 
@@ -67,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sharedInit = getSharedWorkspaceState();
   let currentSourceDir = sharedInit.sourceDir || '';
   let defaultInboxDir = '';
+  let defaultInboxEnvOverride = false;
   let activePlaylist = sharedInit.activePlaylist || 'ALL';
   const selectedPaths = new Set(Array.isArray(sharedInit.selectedPaths) ? sharedInit.selectedPaths : []);
 
@@ -153,14 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function syncSourceLocationUI() {
     const isDefault =
       !currentSourceDir ||
-      (defaultInboxDir && currentSourceDir === defaultInboxDir) ||
-      currentSourceDir.endsWith('/library/inbox') ||
-      currentSourceDir.endsWith('\\library\\inbox');
+      Boolean(defaultInboxDir && currentSourceDir === defaultInboxDir);
     if (activeSourceBadge) {
-      activeSourceBadge.textContent = isDefault
-        ? 'library/inbox (App Default Collection)'
-        : currentSourceDir;
-      activeSourceBadge.title = currentSourceDir || 'library/inbox';
+      activeSourceBadge.textContent = formatSourceBadgeText(currentSourceDir || defaultInboxDir, isDefault);
+      activeSourceBadge.title = currentSourceDir || defaultInboxDir || '';
+    }
+    if (btnSetDefaultLibrary) {
+      btnSetDefaultLibrary.classList.toggle('hidden', isDefault || defaultInboxEnvOverride);
     }
     if (btnResetInbox) {
       btnResetInbox.classList.toggle('hidden', isDefault);
@@ -184,6 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (data.default_inbox) defaultInboxDir = data.default_inbox;
+    defaultInboxEnvOverride = Boolean(data.default_inbox_env_override);
     if (data.source_dir) {
       currentSourceDir = data.source_dir;
       if (sourceDirInput) sourceDirInput.value = data.source_dir;
@@ -935,6 +939,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOpenExplorer) {
     btnOpenExplorer.addEventListener('click', () => {
       openFolderInExplorer('', currentSourceDir);
+    });
+  }
+
+  if (btnSetDefaultLibrary) {
+    btnSetDefaultLibrary.addEventListener('click', async () => {
+      if (!currentSourceDir) return;
+      btnSetDefaultLibrary.disabled = true;
+      try {
+        const res = await saveDefaultLibraryDir(currentSourceDir);
+        if (res.ok && res.data?.library_dir) {
+          defaultInboxDir = res.data.library_dir;
+          defaultInboxEnvOverride = Boolean(res.data.env_override);
+          currentSourceDir = res.data.library_dir;
+          if (sourceDirInput) sourceDirInput.value = currentSourceDir;
+          syncSourceLocationUI();
+          persistWorkspaceState();
+        }
+      } finally {
+        btnSetDefaultLibrary.disabled = false;
+      }
     });
   }
 
