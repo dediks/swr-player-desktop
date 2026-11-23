@@ -176,6 +176,7 @@ python3 -m swararia.core.audio_manager download "URL_PLAYLIST_BERIZIN" --authori
 
 ## 📖 Dokumentasi Teknis Lengkap
 
-Arsitektur kode, aturan layer, dan cara menambah rute: [**`docs/architecture.md`**](./docs/architecture.md).
+- Arsitektur kode, aturan layer, dan cara menambah rute: [**`docs/architecture.md`**](./docs/architecture.md).
+- Alur rilis standar (SemVer, Pre-release RC, QA Checklist, & GitHub Releases): [**`docs/RELEASE.md`**](./docs/RELEASE.md).
 
 Lihat [**`DOCUMENTATION.md`**](./docs/DOCUMENTATION.md) untuk penjelasan mendalam mengenai arsitektur 4 halaman, algoritma deteksi spektrum palsu, standar EBU R128 / True Peak ($\text{dBTP}$), serta spesifikasi lengkap REST API internal.

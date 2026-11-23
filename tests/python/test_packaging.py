@@ -424,3 +424,103 @@ def test_build_desktop_console_prints_are_cp1252_safe():
                     # Must encode cleanly on legacy Windows console encodings (cp1252 and cp437).
                     sub.value.encode("cp1252")
                     sub.value.encode("cp437")
+
+
+def test_project_versions_stay_in_sync():
+    """Guards that pyproject.toml, state.py APP_VERSION, and installer.iss MyAppVersion match."""
+    builder = _load_builder()
+    app_ver, tag_info = builder.verify_version_sync(ROOT)
+    assert tag_info is None
+    versions = builder.read_project_versions(ROOT)
+    assert versions["pyproject.toml"] == app_ver
+    assert versions["swararia/server/state.py"] == app_ver
+    assert versions["packaging/installer.iss"] == app_ver
+
+
+def test_parse_release_tag_and_verify_version_sync(tmp_path: Path):
+    builder = _load_builder()
+
+    # Build a synthetic repo layout to test matching, prerelease, and mismatch scenarios.
+    (tmp_path / "swararia" / "server").mkdir(parents=True)
+    (tmp_path / "packaging").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "swararia" / "server" / "state.py").write_text('APP_VERSION = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "packaging" / "installer.iss").write_text('#define MyAppVersion "1.2.3"\n', encoding="utf-8")
+
+    ver, stable_info = builder.verify_version_sync(tmp_path, expected_tag="v1.2.3")
+    assert ver == "1.2.3"
+    assert stable_info == {"tag": "v1.2.3", "base_version": "1.2.3", "prerelease": None, "is_prerelease": False}
+
+    ver_rc, rc_info = builder.verify_version_sync(tmp_path, expected_tag="v1.2.3-rc.1")
+    assert ver_rc == "1.2.3"
+    assert rc_info is not None
+    assert rc_info["is_prerelease"] is True
+    assert rc_info["prerelease"] == "rc.1"
+
+    # Mismatched release tag must fail closed.
+    try:
+        builder.verify_version_sync(tmp_path, expected_tag="v1.2.4")
+    except ValueError as exc:
+        assert "tidak cocok" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError on release tag mismatch")
+
+    # Invalid tag format must fail closed.
+    for bad_tag in ("1.2.3", "release-1.2.3", "v1.2", "v1.2.3;evil"):
+        try:
+            builder.parse_release_tag(bad_tag)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Expected ValueError for invalid tag {bad_tag!r}")
+
+    # Mismatched installer.iss version must fail closed.
+    (tmp_path / "packaging" / "installer.iss").write_text('#define MyAppVersion "1.2.2"\n', encoding="utf-8")
+    try:
+        builder.verify_version_sync(tmp_path)
+    except ValueError as exc:
+        assert "tidak sinkron" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError when installer.iss version drifts")
+
+
+def test_verify_dist_bundle_checks_exe_static_and_ffmpeg(tmp_path: Path):
+    builder = _load_builder()
+    dist_dir = tmp_path / "SwarariaAudioLab"
+    internal = dist_dir / "_internal"
+    (internal / "swararia" / "web" / "static" / "pages" / "ingest").mkdir(parents=True)
+    (internal / "swararia" / "web" / "static" / "pages" / "player").mkdir(parents=True)
+    (internal / "swararia" / "web" / "static" / "modules").mkdir(parents=True)
+    vbin = internal / ".vendor" / "bin"
+    vbin.mkdir(parents=True)
+
+    (dist_dir / "SwarariaAudioLab.exe").write_bytes(b"mz-exe")
+    (internal / "swararia" / "web" / "static" / "pages" / "ingest" / "index.html").write_text("ok", encoding="utf-8")
+    (internal / "swararia" / "web" / "static" / "pages" / "player" / "index.html").write_text("ok", encoding="utf-8")
+    (internal / "swararia" / "web" / "static" / "modules" / "spa-router.js").write_text("// ok", encoding="utf-8")
+    (vbin / "ffmpeg.exe").write_bytes(b"ffmpeg")
+    (vbin / "ffprobe.exe").write_bytes(b"ffprobe")
+    (vbin / "avcodec-63.dll").write_bytes(b"dll")
+
+    assert builder.verify_dist_bundle(dist_dir, is_windows=True) == []
+
+    # Missing shared FFmpeg DLL must be caught.
+    (vbin / "avcodec-63.dll").unlink()
+    errs = builder.verify_dist_bundle(dist_dir, is_windows=True)
+    assert any("avcodec" in e for e in errs)
+
+    # Missing player page must be caught.
+    (internal / "swararia" / "web" / "static" / "pages" / "player" / "index.html").unlink()
+    errs2 = builder.verify_dist_bundle(dist_dir, is_windows=True)
+    assert any("pages/player/index.html" in e for e in errs2)
+
+
+def test_release_workflow_has_verify_gate_prerelease_and_bundle_check():
+    wf_path = ROOT / ".github" / "workflows" / "release-windows.yml"
+    wf = wf_path.read_text(encoding="utf-8")
+    assert "needs: verify" in wf
+    assert "--check-version" in wf
+    assert "--verify-bundle" in wf
+    assert "--prerelease" in wf
+    assert "compression-level: 0" in wf
+    assert "-m yt_dlp --version" in wf

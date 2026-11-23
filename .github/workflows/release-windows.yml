@@ -10,7 +10,61 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    name: Release Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify version synchronization and release tag
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            python packaging/build_desktop.py --check-version --release-tag "$RELEASE_TAG"
+          else
+            python packaging/build_desktop.py --check-version
+          fi
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        continue-on-error: true
+        run: ruff check swararia tests
+
+      - name: Python tests
+        run: python -m pytest
+
+      - name: JavaScript tests
+        run: |
+          for f in tests/js/*.test.mjs; do
+            echo "== $f"
+            node "$f"
+          done
+
   build-windows-installer:
+    name: Build Windows Installer
+    needs: verify
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
@@ -49,24 +103,74 @@ jobs:
             Write-Host "Found Inno Setup compiler: $found"
           }
 
-      - name: Build desktop app and Inno Setup installer
+      - name: Build desktop app, verify bundle, and compile Inno Setup installer
+        shell: pwsh
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $buildArgs = @(
+            "packaging/build_desktop.py",
+            "--clean",
+            "--fetch-ffmpeg",
+            "--install-deps",
+            "--verify-bundle",
+            "--installer"
+          )
+          if ($env:GITHUB_REF.StartsWith("refs/tags/v")) {
+            $buildArgs += @("--release-tag", $env:RELEASE_TAG)
+          }
+          python @buildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test packaged executable and verify installer checksum
         shell: pwsh
         run: |
-          python packaging/build_desktop.py --clean --fetch-ffmpeg --install-deps --installer
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "dist\SwarariaAudioLab_Setup.exe")) {
-            Write-Error "Missing dist\SwarariaAudioLab_Setup.exe"
+          $appExe = "dist\SwarariaAudioLab\SwarariaAudioLab.exe"
+          $setupExe = "dist\SwarariaAudioLab_Setup.exe"
+          $shaFile = "dist\SwarariaAudioLab_Setup.exe.sha256"
+
+          if (-not (Test-Path $appExe)) {
+            Write-Error "Missing $appExe"
             exit 1
           }
-          if (-not (Test-Path "dist\SwarariaAudioLab_Setup.exe.sha256")) {
-            Write-Error "Missing dist\SwarariaAudioLab_Setup.exe.sha256"
+          if (-not (Test-Path $setupExe)) {
+            Write-Error "Missing $setupExe"
             exit 1
           }
+          if (-not (Test-Path $shaFile)) {
+            Write-Error "Missing $shaFile"
+            exit 1
+          }
+
+          $setupSize = (Get-Item $setupExe).Length
+          if ($setupSize -lt 5MB) {
+            Write-Error "Installer unexpectedly small ($setupSize bytes)"
+            exit 1
+          }
+
+          # Verify frozen yt-dlp subprocess router works inside the built Windows binary.
+          $ytVer = & $appExe -m yt_dlp --version
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ytVer)) {
+            Write-Error "Frozen executable yt_dlp smoke test failed (exit $LASTEXITCODE)"
+            exit 1
+          }
+          Write-Host "Smoke test OK: frozen yt-dlp version = $ytVer"
+
+          # Verify .sha256 sidecar matches the actual installer bytes.
+          $actualHash = (Get-FileHash $setupExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifestText = (Get-Content $shaFile -Raw).Trim()
+          if (-not $manifestText.ToLowerInvariant().StartsWith($actualHash)) {
+            Write-Error "SHA-256 manifest mismatch: expected $actualHash, got $manifestText"
+            exit 1
+          }
+          Write-Host "Checksum OK: $manifestText"
 
       - name: Upload installer build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SwarariaAudioLab-Windows-Installer
+          compression-level: 0
           path: |
             dist/SwarariaAudioLab_Setup.exe
             dist/SwarariaAudioLab_Setup.exe.sha256
@@ -77,18 +181,27 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_REPO: ${{ github.repository }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
-          $tag = "${{ github.ref_name }}"
-          $repo = "${{ github.repository }}"
+          $tag = $env:RELEASE_TAG
+          $repo = $env:GITHUB_REPO
+          $isPrerelease = $tag.Contains("-")
           $shaLine = (Get-Content "dist\SwarariaAudioLab_Setup.exe.sha256" -Raw).Trim()
 
-          $notesLines = @(
-            "## SWARARIA AUDIO LAB $tag",
-            "",
+          $notesLines = @("## SWARARIA AUDIO LAB $tag", "")
+          if ($isPrerelease) {
+            $notesLines += @(
+              '> **Kandidat Rilis (Pre-release):** Versi ini ditujukan untuk uji coba pra-rilis dan tidak akan memicu pembaruan otomatis pada pengguna versi stabil.',
+              ""
+            )
+          }
+          $notesLines += @(
             "### Instalasi Windows",
             '1. Unduh `SwarariaAudioLab_Setup.exe` pada bagian **Assets** di bawah.',
             '2. Jalankan wizard instalasi (runtime Python, UI, `yt-dlp`, dan FFmpeg sudah terpaket).',
+            '3. Koleksi audio dan pengaturan Anda tersimpan aman di folder `Music\SwarariaAudioLab` serta `AppData\Local\SwarariaAudioLab` saat upgrade.',
             "",
             '> **Catatan Windows Defender SmartScreen (`Unknown publisher`):**',
             '> Jika muncul jendela *"Windows protected your PC"*, klik **`More info`** -> **`Run anyway`**.',
@@ -111,9 +224,25 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag "dist\SwarariaAudioLab_Setup.exe" "dist\SwarariaAudioLab_Setup.exe.sha256" --clobber
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $editArgs = @("release", "edit", $tag, "--notes-file", $notesPath)
+            if ($isPrerelease) {
+              $editArgs += "--prerelease"
+            } else {
+              $editArgs += "--prerelease=false"
+            }
+            gh @editArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } else {
-            gh release create $tag "dist\SwarariaAudioLab_Setup.exe" "dist\SwarariaAudioLab_Setup.exe.sha256" `
-              --title "SWARARIA AUDIO LAB $tag" `
-              --notes-file $notesPath
+            $createArgs = @(
+              "release", "create", $tag,
+              "dist\SwarariaAudioLab_Setup.exe",
+              "dist\SwarariaAudioLab_Setup.exe.sha256",
+              "--title", "SWARARIA AUDIO LAB $tag",
+              "--notes-file", $notesPath
+            )
+            if ($isPrerelease) {
+              $createArgs += "--prerelease"
+            }
+            gh @createArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
