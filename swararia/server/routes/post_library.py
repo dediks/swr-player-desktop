@@ -55,6 +55,7 @@ class LibraryPostMixin:
         try:
             src_dir = state.resolve_safe_dir(raw_src, state.INBOX_DIR, must_exist=True) if raw_src else state.INBOX_DIR.resolve()
             results = state.metadata_cache.scan_library(src_dir)
+            hub.remote_hub.bump_library_revision()
             self.send_json(200, {"message": "Audit selesai", "results": results})
         except Exception as exc:
             self.send_json(500, {"error": str(exc)})
@@ -154,6 +155,7 @@ class LibraryPostMixin:
                 state.metadata_cache.rename_folder(old_p, new_p)
             else:
                 state.metadata_cache.rename_entry(old_p, new_p)
+            hub.remote_hub.bump_library_revision()
 
             self.send_json(200, {
                 "ok": True,
@@ -188,9 +190,13 @@ class LibraryPostMixin:
                 self.send_json(409 if expected_plan is not None and "changed since the preview" in msg else 400, {"error": msg})
                 return
             if not preview_only:
+                changed_any = False
                 for item in plan:
                     if item.get("applied"):
                         state.metadata_cache.rename_entry(item["old_path"], item["new_path"])
+                        changed_any = True
+                if changed_any:
+                    hub.remote_hub.bump_library_revision()
             public_plan = [
                 {
                     "rel_path": item["rel_path"],
@@ -245,9 +251,13 @@ class LibraryPostMixin:
                 return
 
             if not preview_only:
+                changed_any = False
                 for item in plan:
                     if item.get("changed") and item.get("applied"):
                         state.metadata_cache.rename_entry(item["old_path"], item["new_path"])
+                        changed_any = True
+                if changed_any:
+                    hub.remote_hub.bump_library_revision()
 
             changed_count = sum(1 for item in plan if item.get("changed"))
             public_plan = [
@@ -296,6 +306,8 @@ class LibraryPostMixin:
                 state.metadata_cache.remove_entry(fp)
             for dp in deleted_folders:
                 state.metadata_cache.remove_folder(dp)
+            if deleted_files or deleted_folders:
+                hub.remote_hub.bump_library_revision()
 
             # Sync download archive if deletions occurred inside default INBOX_DIR
             inbox_resolved = state.INBOX_DIR.resolve()

@@ -4,6 +4,7 @@ from __future__ import annotations
 from swararia import config
 from swararia.core import fs_browser
 from swararia.core.task_engine import AudioMetadataCache, TaskQueueManager
+from swararia.server import hub
 
 
 APP_VERSION = "1.0.0"
@@ -26,6 +27,7 @@ task_manager = TaskQueueManager(
     inbox_dir=INBOX_DIR,
     archive_file=ARCHIVE_FILE,
     cookies_file=COOKIES_FILE,
+    on_library_changed=lambda: hub.remote_hub.bump_library_revision(),
 )
 
 

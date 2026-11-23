@@ -225,6 +225,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentSourceDir = sharedInit.sourceDir || '';
   let defaultInboxDir = '';
   let defaultInboxEnvOverride = false;
+  let isFollowingDefaultInbox = !currentSourceDir;
+  let libraryFetchSeq = 0;
   let activePlaylist = sharedInit.activePlaylist || 'ALL';
   let activeTrackRelPath = sharedInit.activeTrackRelPath || '';
 
@@ -1605,6 +1607,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (requestRtaWake && isDeckPlaying()) {
       requestRtaWake();
     }
+    if (!isRemoteController) {
+      refreshPlayerLibrary({ syncSharedSource: true });
+    }
+  });
+
+  window.addEventListener('swararia:library-changed', (ev) => {
+    if (isRemoteController) return;
+    const detail = (ev && ev.detail) || {};
+    if (detail.reason === 'default-library-changed' && isFollowingDefaultInbox) {
+      currentSourceDir = '';
+    }
+    refreshPlayerLibrary();
   });
 
   // ---------------------------------------------------------------------------
@@ -2249,12 +2263,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function refreshPlayerLibrary({ syncSharedSource = false } = {}) {
+    if (syncSharedSource && !isRemoteController) {
+      const shared = getSharedWorkspaceState();
+      if (shared.sourceDir && shared.sourceDir !== currentSourceDir) {
+        currentSourceDir = shared.sourceDir;
+        isFollowingDefaultInbox = Boolean(defaultInboxDir && currentSourceDir === defaultInboxDir);
+      }
+    }
+    const target = !isRemoteController && isFollowingDefaultInbox ? '' : currentSourceDir;
+    return fetchLibrary(target);
+  }
+
   async function fetchLibrary(customSource) {
+    const fetchSeq = ++libraryFetchSeq;
     const targetSource = typeof customSource === 'string' ? customSource.trim() : currentSourceDir;
     const url = targetSource
       ? '/api/library?source_dir=' + encodeURIComponent(targetSource)
       : '/api/library';
     const { ok, data, error } = await apiGet(url);
+    if (fetchSeq !== libraryFetchSeq) {
+      return false;
+    }
     if (!ok) {
       notify({
         type: 'error',
@@ -2271,10 +2301,18 @@ document.addEventListener('DOMContentLoaded', () => {
       currentSourceDir = data.source_dir;
       if (sourceDirInput) sourceDirInput.value = data.source_dir;
     }
+    isFollowingDefaultInbox =
+      !currentSourceDir || Boolean(defaultInboxDir && currentSourceDir === defaultInboxDir);
     syncSourceLocationUI();
 
     allFiles = data.files || [];
     allPlaylists = data.playlists || [];
+    if (
+      activePlaylist !== 'ALL' &&
+      !allPlaylists.some(pl => pl && pl.name === activePlaylist)
+    ) {
+      activePlaylist = 'ALL';
+    }
 
     renderPlaylists();
     applyFiltersAndRenderTable();
@@ -2283,12 +2321,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return true;
     }
 
-    const needsBitrateProbe = allFiles.some(f => !f.qc || !f.qc.codec || !f.qc.bitrate_kbps);
-    const probeSig = `${currentSourceDir}|${allFiles.length}`;
-    if (needsBitrateProbe && probeSig !== lastAutoProbedSignature) {
+    const unprobedFiles = allFiles.filter(f => !f.qc || !f.qc.codec || !f.qc.bitrate_kbps);
+    const probeSig = `${currentSourceDir}|${unprobedFiles.map(f => f.rel_path).join(',')}`;
+    if (unprobedFiles.length > 0 && probeSig !== lastAutoProbedSignature) {
       lastAutoProbedSignature = probeSig;
       const probeDir = currentSourceDir;
       apiPost('/api/probe', { source_dir: probeDir, probe_spectral: false }).then((probeRes) => {
+        if (fetchSeq !== libraryFetchSeq) return;
         if (!probeRes.ok || !Array.isArray(probeRes.data?.files)) return;
         if (probeDir !== currentSourceDir) return;
         allFiles = probeRes.data.files;
@@ -2308,9 +2347,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Restore previously active track (including exact playback position & playing state) or cue first song automatically
-    if (activeTrackRelPath) {
-      const restored = allFiles.find(f => f.rel_path === activeTrackRelPath);
-      if (restored && (!activeTrackObj || activeTrackObj.rel_path !== restored.rel_path)) {
+    const restored = activeTrackRelPath
+      ? allFiles.find(f => f.rel_path === activeTrackRelPath)
+      : null;
+    if (restored) {
+      if (!activeTrackObj || activeTrackObj.rel_path !== restored.rel_path) {
         const savedSession = !hasRestoredInitialSession ? loadPlaybackSessionState() : null;
         hasRestoredInitialSession = true;
         const isMatchingSession = Boolean(
@@ -2322,7 +2363,7 @@ document.addEventListener('DOMContentLoaded', () => {
           startTime: resumeTime,
           isSessionRestore: true,
         });
-      } else if (restored) {
+      } else {
         activeTrackObj = restored;
         updateNowPlayingCard(restored);
       }
@@ -3055,6 +3096,7 @@ document.addEventListener('DOMContentLoaded', () => {
           defaultInboxDir = res.data.library_dir;
           defaultInboxEnvOverride = Boolean(res.data.env_override);
           currentSourceDir = res.data.library_dir;
+          isFollowingDefaultInbox = true;
           if (sourceDirInput) sourceDirInput.value = currentSourceDir;
           syncSourceLocationUI();
           persistWorkspaceState();
@@ -3068,6 +3110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnResetInbox) {
     btnResetInbox.addEventListener('click', () => {
       currentSourceDir = '';
+      isFollowingDefaultInbox = true;
       activePlaylist = 'ALL';
       fetchLibrary('');
     });
@@ -3119,6 +3162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     getStartPath: () => currentSourceDir || defaultInboxDir,
     onSelectSource: selectedPath => {
       currentSourceDir = selectedPath;
+      isFollowingDefaultInbox = Boolean(defaultInboxDir && selectedPath === defaultInboxDir);
       activePlaylist = 'ALL';
       fetchLibrary(selectedPath);
     },
@@ -4252,7 +4296,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.pin) remotePin = data.pin;
         if (typeof data.upload_library_version === 'number') {
           if (lastUploadLibraryVersion !== null && data.upload_library_version > lastUploadLibraryVersion) {
-            fetchLibrary(currentSourceDir);
+            if (typeof refreshPlayerLibrary === 'function') {
+              refreshPlayerLibrary();
+            } else if (typeof fetchLibrary === 'function') {
+              fetchLibrary(currentSourceDir);
+            }
           }
           lastUploadLibraryVersion = data.upload_library_version;
         }
@@ -4442,6 +4490,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         if (phoneUploadCtrl) {
           phoneUploadCtrl.applyRemoteState(data);
+        }
+        if (typeof data.upload_library_version === 'number') {
+          if (lastUploadLibraryVersion !== null && data.upload_library_version > lastUploadLibraryVersion) {
+            fetchLibrary(currentSourceDir);
+          }
+          lastUploadLibraryVersion = data.upload_library_version;
         }
         if (remoteConnStatus) {
           if (data.master_online) {

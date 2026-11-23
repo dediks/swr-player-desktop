@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -576,7 +577,7 @@ def compile_inno_setup_installer(signing_config: SigningConfig | None = None) ->
         if setup_exe.is_file():
             digest_info = write_sha256_manifest(setup_exe)
         print("\n" + "=" * 68)
-        print("  🎉 INSTALLER WIZARD BERHASIL DIBUAT!")
+        print("  [OK] INSTALLER WIZARD BERHASIL DIBUAT!")
         print("=" * 68)
         print(f"  File Installer : {setup_exe}")
         if digest_info is not None:
@@ -596,7 +597,132 @@ def compile_inno_setup_installer(signing_config: SigningConfig | None = None) ->
         return False
 
 
+_SEMVER_CORE_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+_RELEASE_TAG_RE = re.compile(
+    r"^v(?P<base>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))"
+    r"(?:-(?P<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+
+
+def read_project_versions(base_dir: Path = BASE_DIR) -> dict[str, str]:
+    """Reads version strings from pyproject.toml, state.py, and installer.iss."""
+    pyproject_text = (base_dir / "pyproject.toml").read_text(encoding="utf-8")
+    state_text = (base_dir / "swararia" / "server" / "state.py").read_text(encoding="utf-8")
+    iss_text = (base_dir / "packaging" / "installer.iss").read_text(encoding="utf-8")
+
+    m_py = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pyproject_text)
+    m_state = re.search(r'(?m)^APP_VERSION\s*=\s*"([^"]+)"', state_text)
+    m_iss = re.search(r'(?m)^#define\s+MyAppVersion\s+"([^"]+)"', iss_text)
+    if not m_py:
+        raise ValueError("Versi tidak ditemukan di pyproject.toml.")
+    if not m_state:
+        raise ValueError("APP_VERSION tidak ditemukan di swararia/server/state.py.")
+    if not m_iss:
+        raise ValueError("MyAppVersion tidak ditemukan di packaging/installer.iss.")
+
+    return {
+        "pyproject.toml": m_py.group(1).strip(),
+        "swararia/server/state.py": m_state.group(1).strip(),
+        "packaging/installer.iss": m_iss.group(1).strip(),
+    }
+
+
+def parse_release_tag(tag: str) -> dict[str, object]:
+    """Validates a release tag such as v1.0.1 or v1.0.1-rc.1 and extracts SemVer parts."""
+    clean = str(tag or "").strip()
+    m = _RELEASE_TAG_RE.match(clean)
+    if not m:
+        raise ValueError(
+            f"Format tag rilis tidak valid: '{clean}'. Gunakan SemVer seperti v1.0.1 atau v1.0.1-rc.1."
+        )
+    prerelease = m.group("pre")
+    return {
+        "tag": clean,
+        "base_version": m.group("base"),
+        "prerelease": prerelease,
+        "is_prerelease": bool(prerelease),
+    }
+
+
+def verify_version_sync(
+    base_dir: Path = BASE_DIR,
+    expected_tag: str | None = None,
+) -> tuple[str, dict[str, object] | None]:
+    """Ensures all version files match each other and (optionally) the release tag."""
+    versions = read_project_versions(base_dir)
+    unique = set(versions.values())
+    if len(unique) != 1:
+        details = ", ".join(f"{src}={ver}" for src, ver in versions.items())
+        raise ValueError(f"Versi proyek tidak sinkron ({details}). Samakan ketiga file sebelum rilis.")
+
+    app_version = next(iter(unique))
+    if not _SEMVER_CORE_RE.match(app_version):
+        raise ValueError(f"Format versi proyek tidak valid: '{app_version}'. Gunakan format MAJOR.MINOR.PATCH.")
+
+    tag_info: dict[str, object] | None = None
+    if expected_tag is not None and str(expected_tag).strip():
+        tag_info = parse_release_tag(expected_tag)
+        if tag_info["base_version"] != app_version:
+            raise ValueError(
+                f"Tag rilis '{tag_info['tag']}' (versi dasar {tag_info['base_version']}) "
+                f"tidak cocok dengan versi proyek ({app_version})."
+            )
+
+    return app_version, tag_info
+
+
+def verify_dist_bundle(dist_dir: Path = DIST_DIR, *, is_windows: bool | None = None) -> list[str]:
+    """Verifies that the built PyInstaller bundle contains the app binary, UI assets, and FFmpeg."""
+    win = (os.name == "nt") if is_windows is None else bool(is_windows)
+    errors: list[str] = []
+
+    if not dist_dir.is_dir():
+        return [f"Folder distribusi tidak ditemukan: {dist_dir}"]
+
+    exe_name = "SwarariaAudioLab.exe" if win else "SwarariaAudioLab"
+    exe_path = dist_dir / exe_name
+    if not exe_path.is_file() or exe_path.stat().st_size <= 0:
+        errors.append(f"Executable utama hilang atau kosong: {exe_path}")
+
+    internal_root = dist_dir / "_internal" if (dist_dir / "_internal").is_dir() else dist_dir
+    for rel_asset in (
+        Path("swararia") / "web" / "static" / "pages" / "ingest" / "index.html",
+        Path("swararia") / "web" / "static" / "pages" / "player" / "index.html",
+        Path("swararia") / "web" / "static" / "modules" / "spa-router.js",
+    ):
+        asset_path = internal_root / rel_asset
+        if not asset_path.is_file():
+            errors.append(f"Aset Web UI tidak terpaket: {rel_asset.as_posix()}")
+
+    vendor_bin = internal_root / ".vendor" / "bin"
+    if not vendor_bin.is_dir():
+        errors.append(f"Folder binary FFmpeg tidak terpaket: {vendor_bin}")
+    else:
+        suffix = ".exe" if win else ""
+        for tool in ("ffmpeg", "ffprobe"):
+            tool_path = vendor_bin / f"{tool}{suffix}"
+            if not tool_path.is_file() or tool_path.stat().st_size <= 0:
+                errors.append(f"Binary {tool}{suffix} hilang atau kosong di {vendor_bin}")
+        if win:
+            dlls = [p for p in vendor_bin.iterdir() if p.is_file() and p.suffix.lower() == ".dll"]
+            if not any(p.name.lower().startswith("avcodec") for p in dlls):
+                errors.append("Shared library FFmpeg (avcodec*.dll) tidak ditemukan di paket Windows.")
+
+    return errors
+
+
+def _configure_console_encoding() -> None:
+    """Prevents UnicodeEncodeError on Windows cp1252/cp437 redirected console streams."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main() -> int:
+    _configure_console_encoding()
     parser = argparse.ArgumentParser(description="Build standalone Swararia Audio Lab desktop app.")
     parser.add_argument(
         "--install-deps",
@@ -622,6 +748,21 @@ def main() -> int:
         "--fetch-ffmpeg-only",
         action="store_true",
         help="Hanya unduh/perbarui FFmpeg Shared ke .vendor/bin/ lalu keluar tanpa menjalankan PyInstaller.",
+    )
+    parser.add_argument(
+        "--check-version",
+        action="store_true",
+        help="Verifikasi sinkronisasi versi (pyproject.toml, state.py, installer.iss, dan opsional --release-tag) lalu keluar.",
+    )
+    parser.add_argument(
+        "--release-tag",
+        default=None,
+        help="Tag rilis SemVer opsional (mis. v1.0.1 atau v1.0.1-rc.1) untuk divalidasi terhadap versi proyek.",
+    )
+    parser.add_argument(
+        "--verify-bundle",
+        action="store_true",
+        help="Jalankan smoke check pada folder dist/SwarariaAudioLab setelah PyInstaller selesai.",
     )
     parser.add_argument(
         "--sign-thumbprint",
@@ -660,6 +801,19 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.check_version:
+        try:
+            app_ver, tag_info = verify_version_sync(BASE_DIR, expected_tag=args.release_tag)
+        except ValueError as exc:
+            print(f"[ERROR] Validasi versi gagal: {exc}")
+            return 1
+        if tag_info is not None:
+            channel = "Pre-release" if tag_info["is_prerelease"] else "Stable"
+            print(f"  [OK] Versi sinkron: {app_ver} (tag {tag_info['tag']} - {channel})")
+        else:
+            print(f"  [OK] Versi proyek sinkron: {app_ver}")
+        return 0
+
     signing_config = None
     if args.sign_target or not args.fetch_ffmpeg_only:
         try:
@@ -681,8 +835,17 @@ def main() -> int:
             return 1
         return 0 if sign_binary(Path(args.sign_target).resolve(), signing_config) else 1
 
+    if args.release_tag and not args.fetch_ffmpeg_only:
+        try:
+            app_ver, tag_info = verify_version_sync(BASE_DIR, expected_tag=args.release_tag)
+            channel = "Pre-release" if (tag_info and tag_info["is_prerelease"]) else "Stable"
+            print(f"  [OK] Versi rilis terverifikasi: {app_ver} ({args.release_tag} - {channel})")
+        except ValueError as exc:
+            print(f"[ERROR] Validasi versi rilis gagal: {exc}")
+            return 1
+
     print("=" * 68)
-    print("  SWARARIA AUDIO LAB — STANDALONE DESKTOP APP BUILDER")
+    print("  SWARARIA AUDIO LAB - STANDALONE DESKTOP APP BUILDER")
     print("=" * 68)
 
     if args.clean:
@@ -720,6 +883,15 @@ def main() -> int:
         if not gitkeep.exists():
             gitkeep.write_text("", encoding="utf-8")
 
+    if args.verify_bundle:
+        print("\n[4a/5] Memverifikasi kelengkapan paket distribusi...")
+        bundle_errors = verify_dist_bundle(DIST_DIR)
+        if bundle_errors:
+            for err in bundle_errors:
+                print(f"  [ERROR] {err}")
+            return 1
+        print("  [OK] Paket distribusi lengkap (executable, Web UI, dan FFmpeg runtime).")
+
     exe_name = "SwarariaAudioLab.exe" if os.name == "nt" else "SwarariaAudioLab"
     exe_path = DIST_DIR / exe_name
 
@@ -729,7 +901,7 @@ def main() -> int:
             return 1
 
     print("\n" + "=" * 68)
-    print("  ✅ BUILD DESKTOP APP SELESAI!")
+    print("  [OK] BUILD DESKTOP APP SELESAI!")
     print("=" * 68)
     print(f"  Folder Distribusi : {DIST_DIR}")
     print(f"  File Executable   : {exe_path}")

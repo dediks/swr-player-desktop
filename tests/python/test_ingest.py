@@ -800,6 +800,99 @@ def test_run_ytdlp_process_parses_stream_tier_and_task_engine_exposes_bitrate(tm
     assert qc["source_format_id"] == "774"
 
 
+def test_download_invalidates_parent_dir_cache_and_bumps_library_revision(tmp_path):
+    """Downloads (including into playlist subfolders) invalidate parent cache and bump remote hub revision."""
+    from swararia.core import task_engine as te
+    from swararia.server import hub, state
+
+    inbox = (tmp_path / "SwarariaAudioLab").resolve()
+    playlist_dir = inbox / "Live Worship"
+    archive = tmp_path / "downloaded_ids.txt"
+    cookies = tmp_path / "cookies.txt"
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    # 1. Parent cache must be invalidated when a file is written into a nested playlist subfolder.
+    cache = te.AudioMetadataCache()
+    files_before, _ = cache.get_library_files(inbox)
+    assert files_before == []
+
+    playlist_dir.mkdir(parents=True, exist_ok=True)
+    nested_song = playlist_dir / "Track Nested [abc12345678].opus"
+    nested_song.write_bytes(b"OggS" + b"\x00" * 256)
+    cache.invalidate_dir_cache(playlist_dir)
+    files_after_inv, _ = cache.get_library_files(inbox)
+    assert len(files_after_inv) == 1
+    assert files_after_inv[0]["name"] == nested_song.name
+
+    # 2. TaskQueueManager.execute_download_task invalidates cache even without ffprobe and invokes callback.
+    fresh_inbox = (tmp_path / "InboxLive").resolve()
+    fresh_inbox.mkdir(parents=True, exist_ok=True)
+    fresh_cache = te.AudioMetadataCache()
+    assert fresh_cache.get_library_files(fresh_inbox)[0] == []
+
+    notified = []
+    mgr = te.TaskQueueManager(
+        fresh_cache,
+        fresh_inbox,
+        archive,
+        cookies,
+        on_library_changed=lambda: notified.append(1),
+    )
+
+    def _fake_dl(cmd, env=None, existing_by_vid=None, on_log=None, on_progress=None):
+        pl = fresh_inbox / "Setlist 1"
+        pl.mkdir(parents=True, exist_ok=True)
+        (pl / "Downloaded Song [xyz98765432].opus").write_bytes(b"OggS" + b"\x00" * 512)
+        return {
+            "returncode": 0,
+            "skipped_files": [],
+            "last_error_line": "",
+            "cookie_err_detected": False,
+            "engine_recovery_needed": False,
+            "selected_format_id": "251",
+            "stream_tier": am.classify_format_tier("251"),
+            "video_formats": {"xyz98765432": am.classify_format_tier("251")},
+        }
+
+    task = {
+        "id": "job_auto_load",
+        "type": "download",
+        "url": "https://music.youtube.com/watch?v=xyz98765432",
+        "status": "PROCESSING",
+        "auto_scan": False,
+        "is_playlist": True,
+        "audio_format": "opus",
+        "keep_opus": False,
+        "use_cookies": False,
+        "cookie_browser": "chrome",
+        "progress": 0,
+    }
+    with mock.patch.object(am, "is_ytdlp_available", return_value=True), \
+            mock.patch.object(am, "sync_download_archive", return_value=0), \
+            mock.patch.object(am, "run_ytdlp_process", side_effect=_fake_dl), \
+            mock.patch.object(shutil, "which", return_value=None):
+        mgr.execute_download_task(task)
+
+    assert task["status"] == "SUCCESS"
+    assert len(notified) == 1
+    # Must see the new song immediately without force_refresh (TTL cache was invalidated).
+    files_live, playlists_live = fresh_cache.get_library_files(fresh_inbox, force_refresh=False)
+    assert len(files_live) == 1
+    assert files_live[0]["folder"] == "Setlist 1"
+    assert any(p["name"] == "Setlist 1" for p in playlists_live)
+
+    # 3. Server state.task_manager wires on_library_changed -> hub.remote_hub.bump_library_revision()
+    #    and get_remote_state() exposes upload_library_version to remote browsers as well.
+    fake_hub = hub.RemotePlayerHub()
+    rev_before = fake_hub.get_library_revision()
+    with mock.patch.object(hub, "remote_hub", fake_hub):
+        state.task_manager._notify_library_changed()
+    assert fake_hub.get_library_revision() == rev_before + 1
+    remote_state = fake_hub.get_remote_state("127.0.0.1:test")
+    assert remote_state["upload_library_version"] == rev_before + 1
+
+
+
 
 
 
